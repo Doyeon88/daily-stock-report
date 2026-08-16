@@ -1,0 +1,15 @@
+yfinance==0.2.32
+pandas==2.0.3
+numpy==1.24.3
+beautifulsoup4==4.12.2
+requests==2.31.0
+schedule==1.2.0
+tweepy==4.14.0
+firebase-admin==6.2.0
+alpha-vantage==2.3.1
+finnhub-python==1.7.7
+newsapi==0.1.2
+sec-edgar-downloader==0.3.5
+python-dotenv==1.0.0
+lxml==4.9.3
+pytz==2023.3
