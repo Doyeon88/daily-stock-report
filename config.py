@@ -26,16 +26,18 @@ FCM_DEVICE_TOKEN = os.getenv('FCM_DEVICE_TOKEN')
 # ============================================
 # 추적할 종목 리스트 (티커 심볼)
 STOCKS_TO_TRACK = [
-    'BE',      # Bloom Energy (예시)
-    # 'TSLA',  # Tesla
-    # 'AAPL',  # Apple
-    # 추가 종목들을 여기에 입력하세요
+    'BE',     # Bloom Energy - 연료전지
+    'BWXT',   # BWX Technologies - 항공우주
+    'CRCL',   # Circleup - 크라우드펀딩
+    'SECZ',   # Securus Technologies - 통신
 ]
 
 # 경쟁사 매핑 (각 종목별 경쟁사)
 COMPETITOR_MAP = {
-    'BE': ['FCEL', 'PLUG'],  # Bloom Energy의 경쟁사
-    # 'TSLA': ['NIO', 'LI'],
+    'BE': ['FCEL', 'PLUG', 'HYLN'],           # Bloom Energy의 경쟁사 (연료전지)
+    'BWXT': ['RTX', 'LMT', 'NOC'],            # BWX Technologies의 경쟁사 (방위산업)
+    'CRCL': ['KAPT', 'MULN'],                 # Circleup의 경쟁사 (크라우드펀딩)
+    'SECZ': ['GTEC', 'IRIDM'],                # Securus Technologies의 경쟁사 (통신)
 }
 
 # ============================================
