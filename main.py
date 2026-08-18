@@ -17,6 +17,8 @@ from config import (
     STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE
 )
 
+from scrapers import yfinance_scraper
+
 # Create data directory if it doesn't exist
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs('logs', exist_ok=True)
@@ -71,7 +73,7 @@ def main():
 
         logger.info("Step 1: Collecting stock data...")
         # 1. Collect basic stock data
-        # stock_data = yfinance_scraper.fetch_stock_data(STOCKS_TO_TRACK)
+        stock_data = yfinance_scraper.fetch_stock_data(STOCKS_TO_TRACK)
         logger.info("✓ Stock data collected")
 
         logger.info("Step 2: Collecting financial data...")
