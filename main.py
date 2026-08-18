@@ -44,9 +44,10 @@ def main():
     logger.info("=" * 60)
 
     try:
-        # TODO: Import and run data collectors
+        # Import and run data collectors
+        from scrapers import yfinance_scraper
+        # TODO: Import and run remaining data collectors
         # from scrapers import (
-        #     yfinance_scraper,
         #     alpha_vantage,
         #     fmp_scraper,
         #     finnhub_scraper,
@@ -58,20 +59,21 @@ def main():
         #     technical_analysis
         # )
 
-        # TODO: Import and run data processors
+        # Import and run data processors
+        from processors import report_generator
+        # TODO: Import and run remaining data processors
         # from processors import (
         #     data_cleaner,
-        #     report_generator,
         #     metrics_calculator,
         #     comparison_builder
         # )
 
-        # TODO: Import and send notifications
-        # from notifications import fcm_notifier
+        # Import and send notifications
+        from notifications import fcm_notifier
 
         logger.info("Step 1: Collecting stock data...")
         # 1. Collect basic stock data
-        # stock_data = yfinance_scraper.fetch_stock_data(STOCKS_TO_TRACK)
+        stock_data = yfinance_scraper.fetch_stock_data(STOCKS_TO_TRACK)
         logger.info("✓ Stock data collected")
 
         logger.info("Step 2: Collecting financial data...")
@@ -106,20 +108,14 @@ def main():
 
         logger.info("Step 8: Generating report...")
         # 8. Generate comprehensive report
-        # report = report_generator.generate_report(
-        #     stock_data,
-        #     financial_data,
-        #     news_data,
-        #     short_data,
-        #     ceo_data,
-        #     technical_data,
-        #     competitor_data
-        # )
+        # TODO: Pass additional collected data (financial_data, news_data, short_data,
+        # ceo_data, technical_data, competitor_data) once those collectors are implemented
+        report = report_generator.generate_report(stock_data)
         logger.info("✓ Report generated")
 
         logger.info("Step 9: Sending push notification...")
         # 9. Send push notification via FCM
-        # fcm_notifier.send_notification(report)
+        fcm_notifier.send_report(report)
         logger.info("✓ Notification sent")
 
         logger.info("=" * 60)
