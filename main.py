@@ -17,7 +17,10 @@ from config import (
     STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE
 )
 
-from scrapers import yfinance_scraper, fmp_scraper, news_scraper
+from scrapers import (
+    yfinance_scraper, fmp_scraper, news_scraper, short_interest,
+    twitter_scraper, technical_analysis, competitor_scraper
+)
 
 # Create data directory if it doesn't exist
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -46,20 +49,6 @@ def main():
     logger.info("=" * 60)
 
     try:
-        # TODO: Import and run data collectors
-        # from scrapers import (
-        #     yfinance_scraper,
-        #     alpha_vantage,
-        #     fmp_scraper,
-        #     finnhub_scraper,
-        #     news_scraper,
-        #     short_interest,
-        #     sec_filings,
-        #     twitter_scraper,
-        #     competitor_scraper,
-        #     technical_analysis
-        # )
-
         # TODO: Import and run data processors
         # from processors import (
         #     data_cleaner,
@@ -88,22 +77,22 @@ def main():
 
         logger.info("Step 4: Collecting short interest data...")
         # 4. Collect short interest
-        # short_data = short_interest.fetch_short_interest(STOCKS_TO_TRACK)
+        short_data = short_interest.fetch_short_interest(STOCKS_TO_TRACK)
         logger.info("✓ Short interest data collected")
 
         logger.info("Step 5: Monitoring CEO activities...")
         # 5. Monitor CEO social media
-        # ceo_data = twitter_scraper.fetch_ceo_tweets(STOCKS_TO_TRACK)
+        ceo_data = twitter_scraper.fetch_ceo_tweets(STOCKS_TO_TRACK)
         logger.info("✓ CEO data collected")
 
         logger.info("Step 6: Analyzing technical indicators...")
         # 6. Calculate technical indicators
-        # technical_data = technical_analysis.calculate_indicators(STOCKS_TO_TRACK)
+        technical_data = technical_analysis.calculate_indicators(STOCKS_TO_TRACK)
         logger.info("✓ Technical analysis completed")
 
         logger.info("Step 7: Building competitor comparison...")
         # 7. Build competitor comparison
-        # competitor_data = competitor_scraper.compare_stocks(STOCKS_TO_TRACK)
+        competitor_data = competitor_scraper.compare_stocks(STOCKS_TO_TRACK)
         logger.info("✓ Competitor comparison completed")
 
         logger.info("Step 8: Generating report...")
