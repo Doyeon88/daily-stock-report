@@ -18,8 +18,9 @@ def generate_report(stock_data: Dict[str, Dict]) -> Dict:
         stock_data: Mapping of ticker -> stock data (from yfinance_scraper.fetch_stock_data)
 
     Returns:
-        dict: Report data compatible with notifications.fcm_notifier.send_report_notification,
-              containing 'title', 'summary', 'insights', 'timestamp' and 'stocks_count'
+        dict: Report data compatible with notifications.fcm_notifier.send_report
+              (and the underlying send_report_notification), containing 'title',
+              'summary', 'insights', 'timestamp' and 'stocks_count'
     """
     timestamp = datetime.now().isoformat()
     tickers = list(stock_data.keys())
