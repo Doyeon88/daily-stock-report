@@ -13,3 +13,4 @@ sec-edgar-downloader==0.3.5
 python-dotenv==1.0.0
 lxml==4.9.3
 pytz==2023.3
+pytest==7.4.3
