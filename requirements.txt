@@ -7,8 +7,8 @@ schedule==1.2.0
 tweepy==4.14.0
 firebase-admin==6.2.0
 alpha-vantage==2.3.1
-finnhub-python==1.7.7
-newsapi==0.1.2
+finnhub-python==2.4.20
+newsapi-python==0.2.7
 sec-edgar-downloader==0.3.5
 python-dotenv==1.0.0
 lxml==4.9.3
