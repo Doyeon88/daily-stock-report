@@ -17,7 +17,7 @@ from config import (
     STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE
 )
 
-from scrapers import yfinance_scraper, fmp_scraper
+from scrapers import yfinance_scraper, fmp_scraper, news_scraper
 
 # Create data directory if it doesn't exist
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -83,7 +83,7 @@ def main():
 
         logger.info("Step 3: Collecting news...")
         # 3. Collect news
-        # news_data = news_scraper.fetch_news(STOCKS_TO_TRACK)
+        news_data = news_scraper.fetch_news(STOCKS_TO_TRACK)
         logger.info("✓ News collected")
 
         logger.info("Step 4: Collecting short interest data...")
