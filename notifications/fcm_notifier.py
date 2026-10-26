@@ -3,13 +3,16 @@ Firebase Cloud Messaging (FCM) Notifier
 Sends push notifications to mobile devices
 """
 
+import base64
 import json
 import logging
 from typing import Dict, List, Optional
 import firebase_admin
 from firebase_admin import credentials, messaging
 
-from config import FIREBASE_CREDENTIALS_PATH, FCM_DEVICE_TOKEN, ENABLE_FCM_NOTIFICATION
+from config import (
+    FIREBASE_CREDENTIALS_PATH, FCM_DEVICE_TOKEN, ENABLE_FCM_NOTIFICATION, REPORT_PAGE_URL
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +27,33 @@ def _load_credentials(value: str):
     if value.lstrip().startswith('{'):
         return credentials.Certificate(json.loads(value))
     return credentials.Certificate(value)
+
+
+def _build_report_link(report_data: Dict) -> Optional[str]:
+    """
+    Build the URL opened when the notification is tapped
+
+    The report travels in the URL fragment as base64url JSON, so the static report page
+    needs no backend and nothing has to be committed. The page must be on the same host
+    as the service worker, otherwise the Firebase SDK ignores the link.
+
+    Returns:
+        str: Report page URL, or None if REPORT_PAGE_URL is not configured
+    """
+    if not REPORT_PAGE_URL:
+        return None
+
+    rows = []
+    for ticker, data in (report_data.get('stock_data') or {}).items():
+        error = str(data['error'])[:80] if data.get('error') else None
+        rows.append([
+            ticker, data.get('price'), data.get('previous_close'), data.get('change'),
+            data.get('change_percent'), data.get('volume'), error,
+        ])
+
+    payload = {'v': 1, 't': report_data.get('timestamp', ''), 's': rows}
+    raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    return f"{REPORT_PAGE_URL}#{base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')}"
 
 
 class FCMNotifier:
@@ -63,7 +93,8 @@ class FCMNotifier:
         title: str,
         body: str,
         data: Optional[Dict] = None,
-        tokens: Optional[List[str]] = None
+        tokens: Optional[List[str]] = None,
+        link: Optional[str] = None
     ) -> bool:
         """
         Send notification via FCM
@@ -73,6 +104,7 @@ class FCMNotifier:
             body: Notification body/message
             data: Optional data dictionary
             tokens: List of device tokens (uses configured tokens if None)
+            link: Optional https URL opened when the notification is tapped
         
         Returns:
             bool: True if notification sent successfully
@@ -89,6 +121,13 @@ class FCMNotifier:
             return False
         
         try:
+            # Without a link, tapping the notification only dismisses it
+            webpush = None
+            if link:
+                webpush = messaging.WebpushConfig(
+                    fcm_options=messaging.WebpushFCMOptions(link=link)
+                )
+
             # Create notification
             message = messaging.MulticastMessage(
                 notification=messaging.Notification(
@@ -96,6 +135,7 @@ class FCMNotifier:
                     body=body
                 ),
                 data=data or {},
+                webpush=webpush,
                 tokens=tokens
             )
             
@@ -152,7 +192,7 @@ class FCMNotifier:
             }
             
             # Send notification
-            return self.send_notification(title, body, data)
+            return self.send_notification(title, body, data, link=_build_report_link(report_data))
         
         except Exception as e:
             logger.error(f"Error sending report notification: {str(e)}")

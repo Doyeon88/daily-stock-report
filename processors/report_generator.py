@@ -7,6 +7,10 @@ import logging
 from datetime import datetime
 from typing import Dict
 
+import pytz
+
+from config import TIMEZONE
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +26,8 @@ def generate_report(stock_data: Dict[str, Dict]) -> Dict:
               (and the underlying send_report_notification), containing 'title',
               'summary', 'insights', 'timestamp' and 'stocks_count'
     """
-    timestamp = datetime.now().isoformat()
+    # Timezone-aware: the GitHub Actions runner clock is UTC, not the configured TIMEZONE
+    timestamp = datetime.now(pytz.timezone(TIMEZONE)).isoformat()
     tickers = list(stock_data.keys())
 
     valid_entries = {

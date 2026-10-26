@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daily Stock Report</title>
+  <style>
+    :root { color-scheme: light dark; --up: #d93025; --down: #1a73e8; --line: #8884; }
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 1.5rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.3rem; margin-bottom: .2rem; }
+    #status { color: #888; font-size: .9rem; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: .6rem .4rem; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th:first-child, td.ticker { text-align: left; font-weight: 700; }
+    td.unavailable { text-align: left; color: #888; white-space: normal; }
+    .up { color: var(--up); }
+    .down { color: var(--down); }
+    .hint { color: #888; font-size: .8rem; margin-top: 1rem; }
+    /* 폰 화면: 글자와 여백을 줄여 5열이 한 화면에 들어오게 한다 */
+    @media (max-width: 520px) {
+      body { padding: 0 .75rem; }
+      table { font-size: .88rem; }
+      th, td { padding: .5rem .3rem; }
+    }
+    /* 아주 좁은 화면(320px대): 등락률로 충분하므로 '전일 대비' 열은 숨긴다 */
+    @media (max-width: 340px) {
+      .chg { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <h1>📈 Daily Stock Report</h1>
+  <div id="status"></div>
+  <table>
+    <thead>
+      <tr><th>종목</th><th>현재가</th><th class="chg">전일 대비</th><th>등락률</th><th>거래량</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다.</p>
+  <script src="./report.js"></script>
+</body>
+</html>

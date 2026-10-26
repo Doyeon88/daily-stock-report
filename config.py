@@ -65,6 +65,12 @@ METRICS_FILE = os.path.join(DATA_DIR, 'metrics.json')
 # Firebase FCM 푸시 알림 활성화 여부
 ENABLE_FCM_NOTIFICATION = True
 
+# 알림을 탭하면 열리는 리포트 페이지 (docs/report.html, GitHub Pages)
+# 푸시를 받는 서비스 워커와 같은 호스트여야 합니다. 비워 두면 탭해도 아무것도 열리지 않습니다.
+REPORT_PAGE_URL = os.getenv(
+    'REPORT_PAGE_URL', 'https://doyeon88.github.io/daily-stock-report/report.html'
+)
+
 # 이메일 설정 (선택사항)
 ENABLE_EMAIL_NOTIFICATION = False
 EMAIL_FROM = os.getenv('EMAIL_FROM')

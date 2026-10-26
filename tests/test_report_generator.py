@@ -53,3 +53,9 @@ def test_generate_report_empty():
     assert report['stocks_count'] == 0
     assert report['summary'] == 'No stocks tracked'
     assert report['insights'] == []
+
+
+def test_generate_report_timestamp_is_in_configured_timezone():
+    report = report_generator.generate_report({})
+
+    assert report['timestamp'].endswith('+09:00')  # config.TIMEZONE is Asia/Seoul

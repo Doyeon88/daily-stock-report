@@ -2,11 +2,20 @@
 Unit tests for notifications/fcm_notifier.py
 """
 
+import base64
+import json
 from unittest.mock import MagicMock
 
 import pytest
 
 from notifications import fcm_notifier
+
+REPORT_PAGE = 'https://example.github.io/app/report.html'
+
+
+def _decode_fragment(link):
+    fragment = link.split('#', 1)[1]
+    return json.loads(base64.urlsafe_b64decode(fragment + '=' * (-len(fragment) % 4)))
 
 
 @pytest.fixture
@@ -88,3 +97,46 @@ def test_report_notification_includes_every_insight(notifier, monkeypatch):
     for ticker in ('BE', 'BWXT', 'CRCL', 'SECZ'):
         assert ticker in message.notification.body
     assert message.data == {'report_timestamp': '2026-10-26T09:00:00', 'stocks_count': '4'}
+
+
+def _report_with_stock_data():
+    return {
+        'title': 'Daily Stock Report',
+        'summary': '1/2 stocks updated successfully',
+        'insights': ['BE: $10.00', 'BAD: data unavailable'],
+        'timestamp': '2026-10-28T09:00:03+09:00',
+        'stocks_count': 2,
+        'stock_data': {
+            'BE': {'price': 10.0, 'previous_close': 9.0, 'change': 1.0,
+                   'change_percent': 11.11, 'volume': 1234, 'error': None},
+            'BAD': {'price': None, 'previous_close': None, 'change': None,
+                    'change_percent': None, 'volume': None, 'error': 'network ' * 30},
+        },
+    }
+
+
+def test_report_notification_opens_report_page_on_tap(notifier, monkeypatch):
+    monkeypatch.setattr(fcm_notifier, 'REPORT_PAGE_URL', REPORT_PAGE)
+    send_each = MagicMock(return_value=_batch_response(1, 0))
+    monkeypatch.setattr(fcm_notifier.messaging, 'send_each_for_multicast', send_each)
+
+    assert notifier.send_report_notification(_report_with_stock_data()) is True
+
+    link = send_each.call_args[0][0].webpush.fcm_options.link
+    assert link.startswith(REPORT_PAGE + '#')
+    payload = _decode_fragment(link)
+    assert payload['v'] == 1
+    assert payload['t'] == '2026-10-28T09:00:03+09:00'
+    assert payload['s'][0] == ['BE', 10.0, 9.0, 1.0, 11.11, 1234, None]
+    assert payload['s'][1][0] == 'BAD'
+    assert 0 < len(payload['s'][1][6]) <= 80  # long error text is truncated
+
+
+def test_report_notification_has_no_link_when_page_not_configured(notifier, monkeypatch):
+    monkeypatch.setattr(fcm_notifier, 'REPORT_PAGE_URL', '')
+    send_each = MagicMock(return_value=_batch_response(1, 0))
+    monkeypatch.setattr(fcm_notifier.messaging, 'send_each_for_multicast', send_each)
+
+    assert notifier.send_report_notification(_report_with_stock_data()) is True
+
+    assert send_each.call_args[0][0].webpush is None
