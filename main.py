@@ -14,23 +14,29 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Import configuration
 from config import (
     LOG_LEVEL, LOG_FILE, LOG_FORMAT, DATA_DIR,
-    STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE
+    STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE,
+    ENABLE_FCM_NOTIFICATION
 )
 
-# Create data directory if it doesn't exist
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs('logs', exist_ok=True)
-
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format=LOG_FORMAT,
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
+
+
+def configure_logging():
+    """
+    Create output directories and configure logging
+    Called at run time (not on import) so importing main has no side effects
+    """
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs('logs', exist_ok=True)
+
+    logging.basicConfig(
+        level=getattr(logging, LOG_LEVEL),
+        format=LOG_FORMAT,
+        handlers=[
+            logging.FileHandler(LOG_FILE, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
 
 
 def main():
@@ -74,49 +80,65 @@ def main():
         logger.info("Step 1: Collecting stock data...")
         # 1. Collect basic stock data
         stock_data = yfinance_scraper.fetch_stock_data(STOCKS_TO_TRACK)
-        logger.info("✓ Stock data collected")
+        logger.info("[OK] Stock data collected")
 
         logger.info("Step 2: Collecting financial data...")
         # 2. Collect financial statements
         # financial_data = fmp_scraper.fetch_financials(STOCKS_TO_TRACK)
-        logger.info("✓ Financial data collected")
+        logger.info("- Skipped (not implemented yet)")
 
         logger.info("Step 3: Collecting news...")
         # 3. Collect news
         # news_data = news_scraper.fetch_news(STOCKS_TO_TRACK)
-        logger.info("✓ News collected")
+        logger.info("- Skipped (not implemented yet)")
 
         logger.info("Step 4: Collecting short interest data...")
         # 4. Collect short interest
         # short_data = short_interest.fetch_short_interest(STOCKS_TO_TRACK)
-        logger.info("✓ Short interest data collected")
+        logger.info("- Skipped (not implemented yet)")
 
         logger.info("Step 5: Monitoring CEO activities...")
         # 5. Monitor CEO social media
         # ceo_data = twitter_scraper.fetch_ceo_tweets(STOCKS_TO_TRACK)
-        logger.info("✓ CEO data collected")
+        logger.info("- Skipped (not implemented yet)")
 
         logger.info("Step 6: Analyzing technical indicators...")
         # 6. Calculate technical indicators
         # technical_data = technical_analysis.calculate_indicators(STOCKS_TO_TRACK)
-        logger.info("✓ Technical analysis completed")
+        logger.info("- Skipped (not implemented yet)")
 
         logger.info("Step 7: Building competitor comparison...")
         # 7. Build competitor comparison
         # competitor_data = competitor_scraper.compare_stocks(STOCKS_TO_TRACK)
-        logger.info("✓ Competitor comparison completed")
+        logger.info("- Skipped (not implemented yet)")
 
         logger.info("Step 8: Generating report...")
         # 8. Generate comprehensive report
         # TODO: Pass additional collected data (financial_data, news_data, short_data,
         # ceo_data, technical_data, competitor_data) once those collectors are implemented
         report = report_generator.generate_report(stock_data)
-        logger.info("✓ Report generated")
+        logger.info("[OK] Report generated")
 
         logger.info("Step 9: Sending push notification...")
         # 9. Send push notification via FCM
-        fcm_notifier.send_report(report)
-        logger.info("✓ Notification sent")
+        notified = fcm_notifier.send_report(report)
+        if notified:
+            logger.info("[OK] Notification sent")
+        elif ENABLE_FCM_NOTIFICATION:
+            logger.error("[FAIL] Notification was not delivered")
+        else:
+            logger.info("- Skipped (FCM notifications are disabled)")
+
+        # Report problems through the exit code so the scheduler / GitHub Actions run fails visibly
+        failures = []
+        if stock_data and all(data.get('error') is not None for data in stock_data.values()):
+            failures.append("no stock data could be collected")
+        if ENABLE_FCM_NOTIFICATION and not notified:
+            failures.append("push notification was not delivered")
+
+        if failures:
+            logger.error(f"Daily Stock Report - Failed: {'; '.join(failures)}")
+            sys.exit(1)
 
         logger.info("=" * 60)
         logger.info("Daily Stock Report - Completed successfully!")
@@ -129,4 +151,5 @@ def main():
 
 
 if __name__ == "__main__":
+    configure_logging()
     main()

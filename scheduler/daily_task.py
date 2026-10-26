@@ -6,10 +6,15 @@ Supports both development (local scheduling) and production (cron/systemd) modes
 import schedule
 import time
 import logging
+import os
 import subprocess
 import sys
 from datetime import datetime
 import pytz
+
+# Project root, so this script works from any directory (python scheduler/daily_task.py)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
 from config import DAILY_REPORT_TIME, TIMEZONE
 
@@ -25,7 +30,8 @@ def run_daily_report():
     try:
         # Run main.py as subprocess
         result = subprocess.run(
-            [sys.executable, 'main.py'],
+            [sys.executable, os.path.join(PROJECT_ROOT, 'main.py')],
+            cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
@@ -56,7 +62,7 @@ def start_scheduler():
     logger.info(f"Scheduler started. Running daily report at {DAILY_REPORT_TIME} {TIMEZONE}")
     
     # Schedule the job
-    schedule.every().day.at(DAILY_REPORT_TIME).do(run_daily_report)
+    schedule.every().day.at(DAILY_REPORT_TIME, TIMEZONE).do(run_daily_report)
     
     # Keep scheduler running
     while True:

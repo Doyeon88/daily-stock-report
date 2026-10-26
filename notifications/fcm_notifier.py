@@ -14,6 +14,18 @@ from config import FIREBASE_CREDENTIALS_PATH, FCM_DEVICE_TOKEN, ENABLE_FCM_NOTIF
 logger = logging.getLogger(__name__)
 
 
+def _load_credentials(value: str):
+    """
+    Build Firebase credentials from FIREBASE_CREDENTIALS
+
+    The value is either a path to a service account key file (local use) or the
+    JSON content itself (GitHub Actions secret, where no key file exists).
+    """
+    if value.lstrip().startswith('{'):
+        return credentials.Certificate(json.loads(value))
+    return credentials.Certificate(value)
+
+
 class FCMNotifier:
     """
     Firebase Cloud Messaging notifier for sending push notifications
@@ -35,7 +47,7 @@ class FCMNotifier:
         try:
             # Initialize Firebase Admin SDK
             if not firebase_admin._apps:
-                cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+                cred = _load_credentials(FIREBASE_CREDENTIALS_PATH)
                 firebase_admin.initialize_app(cred)
             
             self.device_tokens = [FCM_DEVICE_TOKEN]
@@ -44,7 +56,7 @@ class FCMNotifier:
             
         except Exception as e:
             logger.error(f"Failed to initialize FCM: {str(e)}")
-            logger.info("Make sure serviceAccountKey.json exists and is valid")
+            logger.info("Make sure FIREBASE_CREDENTIALS is a valid key file path or key JSON")
     
     def send_notification(
         self,
@@ -87,8 +99,8 @@ class FCMNotifier:
                 tokens=tokens
             )
             
-            # Send notification
-            response = messaging.send_multicast(message)
+            # Send notification (send_multicast used the batch API, shut down in 2024)
+            response = messaging.send_each_for_multicast(message)
             
             if response.failure_count == 0:
                 logger.info(f"Successfully sent notification to {response.success_count} device(s)")
@@ -129,17 +141,14 @@ class FCMNotifier:
             # Create preview of report
             body = f"{summary}\n\n"
             
-            # Add top insights
-            if 'insights' in report_data:
-                insights = report_data['insights'][:2]  # Top 2 insights
-                for insight in insights:
-                    body += f"• {insight}\n"
-            
+            # Add all insights (the notification is the only place the report is delivered)
+            for insight in report_data.get('insights', []):
+                body += f"• {insight}\n"
+
             # Prepare data payload
             data = {
                 'report_timestamp': report_data.get('timestamp', ''),
-                'stocks_count': str(report_data.get('stocks_count', 0)),
-                'has_full_report': 'true'
+                'stocks_count': str(report_data.get('stocks_count', 0))
             }
             
             # Send notification
