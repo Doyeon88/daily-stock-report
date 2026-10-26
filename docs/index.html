@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FCM 토큰 발급</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    button { font-size: 1rem; padding: .7rem 1.2rem; margin: .3rem .3rem .3rem 0; }
+    textarea { width: 100%; height: 9rem; font-family: monospace; font-size: .8rem; }
+    #status { margin: 1rem 0; font-weight: 600; }
+    .hint { color: #555; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <h1>FCM 기기 토큰 발급</h1>
+  <p class="hint">아이폰은 사파리에서 이 페이지를 연 뒤 <b>공유 → 홈 화면에 추가</b>하고, 홈 화면 아이콘으로 다시 열어야 알림 허용이 가능합니다.</p>
+
+  <button id="get">알림 허용하고 토큰 받기</button>
+  <button id="copy" disabled>토큰 복사</button>
+  <div id="status"></div>
+  <textarea id="token" readonly placeholder="토큰이 여기에 표시됩니다"></textarea>
+  <p class="hint">이 토큰을 GitHub 저장소 Settings → Secrets → Actions 의 <code>FCM_DEVICE_TOKEN</code> 에 넣으세요.</p>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+  <script src="./firebase-config.js"></script>
+  <script>
+    const statusEl = document.getElementById('status');
+    const tokenEl = document.getElementById('token');
+    const copyBtn = document.getElementById('copy');
+    const setStatus = (msg) => { statusEl.textContent = msg; };
+
+    document.getElementById('get').addEventListener('click', async () => {
+      try {
+        if (String(self.FIREBASE_CONFIG.apiKey).startsWith('여기에')) {
+          return setStatus('firebase-config.js 에 설정값을 먼저 채워 주세요.');
+        }
+        if (!('serviceWorker' in navigator) || !('Notification' in window)) {
+          return setStatus('이 브라우저는 웹 푸시를 지원하지 않습니다. (아이폰은 홈 화면에 추가한 앱으로 여세요)');
+        }
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return setStatus('알림 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요.');
+
+        firebase.initializeApp(self.FIREBASE_CONFIG);
+        const messaging = firebase.messaging();
+        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+        const token = await messaging.getToken({
+          vapidKey: self.FIREBASE_VAPID_KEY,
+          serviceWorkerRegistration: registration,
+        });
+        if (!token) return setStatus('토큰을 받지 못했습니다.');
+        tokenEl.value = token;
+        copyBtn.disabled = false;
+        setStatus('토큰이 발급되었습니다.');
+      } catch (e) {
+        setStatus('오류: ' + e.message);
+      }
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(tokenEl.value);
+      setStatus('복사되었습니다.');
+    });
+  </script>
+</body>
+</html>
