@@ -18,7 +18,8 @@
 ## 🔧 환경 준비
 
 ### 필수 요구사항
-- Python 3.10 이상 권장 (GitHub Actions는 3.11 사용)
+- Python 3.10 또는 3.11 (GitHub Actions는 3.11 사용). 3.12 이상은 `pandas==2.0.3`/`numpy==1.24.3`
+  핀 버전의 설치 파일이 없어 `pip install`이 실패합니다.
 - Git
 - Firebase 계정
 - 여러 API 키 (아래 참조)
