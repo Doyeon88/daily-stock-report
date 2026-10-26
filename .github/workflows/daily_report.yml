@@ -2,9 +2,13 @@ name: Daily Stock Report
 
 on:
   schedule:
-    # 매일 오전 9시 KST (= 00:00 UTC)
-    - cron: '0 0 * * 1-5'
+    # 화~토 오전 9시 KST (= 00:00 UTC): 미국장은 KST 새벽에 마감하므로
+    # 월~금 장 마감 결과가 다음날 아침(금요일 장은 토요일 아침)에 도착한다
+    - cron: '0 0 * * 2-6'
   workflow_dispatch:  # 수동 실행 버튼
+
+permissions:
+  contents: read
 
 jobs:
   run-report:
@@ -23,17 +27,10 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run daily stock report
+        # 현재 구현된 수집·알림에 필요한 Secret만 전달한다.
+        # 다른 수집기(뉴스, 재무 등)를 구현하면 해당 API 키 Secret을 여기에 추가한다.
         env:
-          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
-          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
-          TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
-          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
-          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
+          # 서비스 계정 키 JSON 파일의 "내용 전체"를 Secret에 넣는다 (파일 경로 아님)
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
           FCM_DEVICE_TOKEN: ${{ secrets.FCM_DEVICE_TOKEN }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: python main.py
