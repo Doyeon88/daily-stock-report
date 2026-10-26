@@ -18,7 +18,7 @@
 ## 🔧 환경 준비
 
 ### 필수 요구사항
-- Python 3.8 이상
+- Python 3.10 이상 권장 (GitHub Actions는 3.11 사용)
 - Git
 - Firebase 계정
 - 여러 API 키 (아래 참조)
@@ -31,10 +31,10 @@ git --version
 
 ---
 
-## 📥 저���소 클론
+## 📥 저장소 클론
 
 ```bash
-git clone https://github.com/songdoyeon88-creator/daily-stock-report.git
+git clone https://github.com/Doyeon88/daily-stock-report.git
 cd daily-stock-report
 ```
 
@@ -61,6 +61,9 @@ pip install -r requirements.txt
 ---
 
 ## 🔑 API 키 발급
+
+> 현재 구현된 수집은 yfinance(키 불필요)뿐이라 아래 API 키 없이도 실행됩니다.
+> 키는 해당 수집기(뉴스, 재무, 트윗 등)를 구현할 때 필요합니다. 필수는 아래 Firebase 설정입니다.
 
 ### 1. Alpha Vantage (기술지표, 재무)
 1. https://www.alphavantage.co/api 접속
@@ -156,13 +159,16 @@ FIREBASE_CREDENTIALS=serviceAccountKey.json
 FCM_DEVICE_TOKEN=your_device_token_here
 ```
 
+`FIREBASE_CREDENTIALS`에는 키 파일 경로(로컬 실행) 또는 키 JSON 내용 자체(GitHub Actions Secret)를 넣을 수 있습니다.
+
 ### 3. 추적할 종목 설정
 `config.py` 편집:
 ```python
 STOCKS_TO_TRACK = [
     'BE',      # Bloom Energy
-    'TSLA',    # Tesla
-    'AAPL',    # Apple
+    'BWXT',    # BWX Technologies
+    'CRCL',    # Circle Internet Group
+    'SECZ',    # Securitize
     # 추가...
 ]
 ```
@@ -212,11 +218,33 @@ send_notification(
 )
 ```
 
+### 5. 단위 테스트
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ---
 
 ## ⏰ 자동화 설정
 
-### 옵션 1: Linux/Mac (Cron)
+### 옵션 1: GitHub Actions (서버·PC 불필요, 권장)
+
+`.github/workflows/daily_report.yml`이 화~토 오전 9시(KST)에 자동 실행됩니다.
+미국장은 KST 새벽에 마감하므로, 월~금 장 마감 결과가 다음날 아침(금요일 장은 토요일 아침)에 도착합니다.
+
+1. 저장소 → Settings → Secrets and variables → Actions → New repository secret
+2. 아래 2개를 등록
+   - `FCM_DEVICE_TOKEN`: 폰의 FCM 토큰
+   - `FIREBASE_CREDENTIALS`: 서비스 계정 키 `serviceAccountKey.json` 파일의 **내용 전체** (파일 경로가 아님)
+3. Actions 탭 → Daily Stock Report → Run workflow 로 수동 실행해서 알림이 오는지 확인
+
+참고:
+- 종목 데이터를 하나도 못 가져왔거나 푸시 알림이 전달되지 않으면 실행이 실패(빨간 X)로 표시되고 GitHub이 실패 메일을 보냅니다. 로그의 `[FAIL]` 줄을 확인하세요.
+- 공개 저장소는 60일간 활동이 없으면 스케줄 실행이 자동으로 꺼집니다. Actions 탭에서 다시 켜세요.
+- 뉴스·재무 등 다른 수집기를 구현하면 해당 API 키를 Secret으로 등록하고 워크플로의 `env`에도 추가해야 합니다.
+
+### 옵션 2: Linux/Mac (Cron)
 
 ```bash
 # 크론 작업 편집
@@ -226,7 +254,7 @@ crontab -e
 0 9 * * * cd /home/user/daily-stock-report && /usr/bin/python3 main.py >> logs/cron.log 2>&1
 ```
 
-### 옵션 2: Windows (Task Scheduler)
+### 옵션 3: Windows (Task Scheduler)
 
 1. "작업 스케줄러" 열기
 2. "기본 작업 만들기"
@@ -237,7 +265,7 @@ crontab -e
    - 인수: `main.py`
    - 시작 위치: `C:\Users\YourName\daily-stock-report`
 
-### 옵션 3: Python Scheduler
+### 옵션 4: Python Scheduler
 
 ```bash
 # 백그라운드에서 스케줄러 실행
@@ -297,6 +325,10 @@ Error: Failed to initialize FCM
 ```
 → `serviceAccountKey.json` 위치 확인
 → `.gitignore`에 이미 추가되었으므로 안전함
+
+### 실행이 실패(exit code 1)로 끝남
+→ 로그의 `[FAIL]` 줄 확인: 알림이 전달되지 않았거나 종목 데이터를 하나도 못 가져온 경우입니다.
+→ yfinance는 Yahoo 응답 변경에 자주 깨지므로, 전부 실패하면 `pip install -U yfinance`로 최신 버전을 먼저 시도하세요.
 
 ### 푸시 알림 받지 못함
 → `FCM_DEVICE_TOKEN` 확인

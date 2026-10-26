@@ -26,18 +26,18 @@ FCM_DEVICE_TOKEN = os.getenv('FCM_DEVICE_TOKEN')
 # ============================================
 # 추적할 종목 리스트 (티커 심볼)
 STOCKS_TO_TRACK = [
-    'BE',     # Bloom Energy - 연료전지
-    'BWXT',   # BWX Technologies - 항공우주
-    'CRCL',   # Circleup - 크라우드펀딩
-    'SECZ',   # Securus Technologies - 통신
+    'BE',     # Bloom Energy - 고체산화물 연료전지(온사이트 발전)
+    'BWXT',   # BWX Technologies - 원자력 부품(해군 원자로 등), 방위산업
+    'CRCL',   # Circle Internet Group - 스테이블코인(USDC)·블록체인 인프라
+    'SECZ',   # Securitize - 디지털 자산 토큰화 플랫폼
 ]
 
 # 경쟁사 매핑 (각 종목별 경쟁사)
 COMPETITOR_MAP = {
-    'BE': ['FCEL', 'PLUG', 'HYLN'],           # Bloom Energy의 경쟁사 (연료전지)
+    'BE': ['FCEL', 'PLUG', 'HYLN'],           # Bloom Energy의 경쟁사 (연료전지·분산발전)
     'BWXT': ['RTX', 'LMT', 'NOC'],            # BWX Technologies의 경쟁사 (방위산업)
-    'CRCL': ['KAPT', 'MULN'],                 # Circleup의 경쟁사 (크라우드펀딩)
-    'SECZ': ['GTEC', 'IRIDM'],                # Securus Technologies의 경쟁사 (통신)
+    'CRCL': ['COIN', 'PYPL'],                 # Circle의 경쟁사 (크립토·결제)
+    'SECZ': ['COIN', 'GLXY', 'BKKT'],         # Securitize의 경쟁사 (디지털 자산 인프라)
 }
 
 # ============================================
