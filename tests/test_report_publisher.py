@@ -18,6 +18,8 @@ REPORT = {
     'news': {'BE': [{'title': '한글 headline', 'url': 'https://news.example/1'}]},
     'details': {'BE': {'rsi14': 23.0}},
     'filings': {}, 'comparison': {},
+    'reddit': {'BE': {'rank': 32, 'mentions': 16, 'upvotes': 51, 'rank_24h_ago': 23, 'mentions_24h_ago': 10},
+               'BWXT': None},
 }
 
 
@@ -63,6 +65,8 @@ def test_published_file_holds_the_full_report(configured, monkeypatch):
     assert payload['g'] == ['BE RSI 23 과매도']
     assert payload['news']['BE'][0]['title'] == '한글 headline'   # non-ASCII survives
     assert payload['details'] == {'BE': {'rsi14': 23.0}}
+    assert payload['reddit']['BE']['rank'] == 32
+    assert payload['reddit']['BWXT'] is None                      # "not ranked" must survive as null, not vanish
 
 
 def test_nothing_is_published_without_credentials(monkeypatch):

@@ -80,8 +80,17 @@ function formatMarketCap(value) {
   return n >= 1e9 ? '$' + (n / 1e9).toFixed(1) + 'B' : '$' + (n / 1e6).toFixed(0) + 'M';
 }
 
+// 레딧 언급 줄 (ApeWisdom). null 은 "집계 순위에 없음", undefined 는 "조회 못 함"이라 줄을 만들지 않습니다.
+function formatRedditText(info) {
+  if (info === null) return '언급 없음 (ApeWisdom 집계)';
+  const parts = [info.rank + '위' + (has(info.rank_24h_ago) ? ' (24시간 전 ' + info.rank_24h_ago + '위)' : '')];
+  parts.push('언급 ' + info.mentions + '회' + (has(info.mentions_24h_ago) ? ' (24시간 전 ' + info.mentions_24h_ago + '회)' : ''));
+  if (has(info.upvotes)) parts.push('업보트 ' + info.upvotes);
+  return parts.join(' · ') + ' · ApeWisdom 집계';
+}
+
 // 종목 카드의 "라벨: 값" 줄들. 값이 없는 항목은 건너뜁니다.
-function formatDetailLines(details, peers) {
+function formatDetailLines(details, peers, reddit) {
   const d = details || {};
   const lines = [];
   const add = (label, text, tone) => lines.push({ label, text, tone: tone || '' });
@@ -117,6 +126,9 @@ function formatDetailLines(details, peers) {
       has(d.short_ratio) ? '청산 ' + Number(d.short_ratio).toFixed(1) + '일' : null,
       d.short_as_of ? '기준 ' + d.short_as_of : null,
     ].filter(Boolean).join(' · '));
+  }
+  if (reddit !== undefined) {
+    add('레딧 언급', formatRedditText(reddit));
   }
   if (has(d.target_mean)) {
     add('애널리스트', [
@@ -224,9 +236,10 @@ function renderReport(doc, data) {
   const news = data.news || {};
   const filings = data.filings || {};
   const peers = (data.comparison && data.comparison.peers) || {};
+  const reddit = data.reddit || {};
   for (const row of data.s) {
     const ticker = String(row[0]);
-    const lines = formatDetailLines(details[ticker], peers[ticker]);
+    const lines = formatDetailLines(details[ticker], peers[ticker], reddit[ticker]);
     const filingInfo = filings[ticker] || { filings: [], form4_count: 0 };
     const articles = news[ticker] || [];
     if (!lines.length && !filingInfo.filings.length && !filingInfo.form4_count && !articles.length) continue;

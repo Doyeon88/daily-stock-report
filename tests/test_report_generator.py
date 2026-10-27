@@ -125,3 +125,36 @@ def test_generate_report_without_extras_still_has_all_keys():
 
     assert report['flags'] == [] and report['details'] == {} and report['news'] == {}
     assert report['filings'] == {} and report['comparison'] == {}
+
+
+def _reddit(mentions, previous, rank=30):
+    return {'rank': rank, 'mentions': mentions, 'upvotes': 50, 'rank_24h_ago': rank, 'mentions_24h_ago': previous}
+
+
+def test_reddit_surge_is_flagged_only_when_big_and_not_just_noise():
+    from datetime import date
+    today = date(2026, 10, 27)
+    stock_data = {'A': {}, 'B': {}, 'C': {}, 'D': {}, 'E': {}}
+    reddit = {
+        'A': _reddit(25, 10),     # 2.5x and plenty of mentions -> flagged
+        'B': _reddit(16, 10),     # only 1.6x -> normal chatter
+        'C': _reddit(5, 1),       # 5x but under 10 mentions -> noise
+        'D': _reddit(12, 0),      # appeared from nothing with 12 mentions -> flagged
+        'E': None,                # not ranked at all
+    }
+
+    flags = report_generator.build_flags(stock_data, {}, {}, today, reddit=reddit)
+
+    assert flags == ['A 레딧 언급 급증 (25회, 24시간 전 10회)', 'D 레딧 언급 급증 (12회, 24시간 전 0회)']
+
+
+def test_generate_report_carries_reddit_and_its_flag():
+    stock_data = {'A': {'ticker': 'A', 'price': 10.0, 'previous_close': 9.0, 'change': 1.0,
+                        'change_percent': 11.11, 'volume': 1, 'error': None}}
+    reddit = {'A': _reddit(30, 10), 'B': None}
+
+    report = report_generator.generate_report(stock_data, reddit=reddit)
+
+    assert report['reddit'] == reddit
+    assert report['flags'] == ['A 레딧 언급 급증 (30회, 24시간 전 10회)']
+    assert report_generator.generate_report({})['reddit'] == {}

@@ -10,13 +10,14 @@ import pytest
 import main
 from notifications import fcm_notifier, report_publisher
 from scrapers import (
-    competitor_scraper, news_scraper, sec_filings, stock_details, yfinance_scraper
+    competitor_scraper, news_scraper, reddit_mentions, sec_filings, stock_details, yfinance_scraper
 )
 
 OPTIONAL_COLLECTORS = (
     (stock_details, 'fetch_stock_details', {}),
     (news_scraper, 'fetch_news', {}),
     (sec_filings, 'fetch_sec_filings', {}),
+    (reddit_mentions, 'fetch_reddit_mentions', {}),
     (competitor_scraper, 'compare_stocks', {'peers': {}, 'market': []}),
 )
 
@@ -103,6 +104,7 @@ def test_failing_optional_collector_does_not_stop_the_report(monkeypatch, module
 def test_collected_extras_reach_the_report_and_the_published_link(monkeypatch):
     monkeypatch.setattr(stock_details, 'fetch_stock_details', MagicMock(return_value={'A': {'rsi14': 25.0}}))
     monkeypatch.setattr(news_scraper, 'fetch_news', MagicMock(return_value={'A': [{'title': 'Headline'}]}))
+    monkeypatch.setattr(reddit_mentions, 'fetch_reddit_mentions', MagicMock(return_value={'A': None}))
     monkeypatch.setattr(
         report_publisher, 'publish_report', MagicMock(return_value='https://raw.example/report.json')
     )
@@ -114,5 +116,6 @@ def test_collected_extras_reach_the_report_and_the_published_link(monkeypatch):
 
     report = send_report.call_args[0][0]
     assert report['news'] == {'A': [{'title': 'Headline'}]}
+    assert report['reddit'] == {'A': None}
     assert 'A RSI 25 과매도' in report['flags']
     assert report['data_url'] == 'https://raw.example/report.json'

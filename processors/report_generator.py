@@ -22,6 +22,8 @@ NEAR_RANGE_EDGE = 5          # % of the 52-week range counted as "near the high/
 EARNINGS_SOON_DAYS = 7
 SHORT_INTEREST_HIGH = 15.0   # % of float
 FILING_RECENT_DAYS = 3       # 8-K filings newer than this are flagged
+REDDIT_MIN_MENTIONS = 10     # fewer Reddit mentions than this is noise, never a surge
+REDDIT_SURGE_RATIO = 2.0     # x the mentions 24 hours earlier
 
 
 def build_flags(
@@ -29,6 +31,7 @@ def build_flags(
     details: Dict[str, Dict],
     filings: Dict[str, Dict],
     today: Optional[date] = None,
+    reddit: Optional[Dict[str, Optional[Dict]]] = None,
 ) -> List[str]:
     """
     Pick out what is unusual today, as short one-line signals
@@ -38,6 +41,7 @@ def build_flags(
         details: ticker -> details from scrapers.stock_details
         filings: ticker -> filings from scrapers.sec_filings
         today: Reference date (defaults to today in TIMEZONE)
+        reddit: ticker -> Reddit mentions from scrapers.reddit_mentions (None for unranked tickers)
 
     Returns:
         list: Signal lines such as "BE RSI 23 과매도"
@@ -85,6 +89,12 @@ def build_flags(
         if recent_8k:
             flags.append(f"{ticker} 8-K {recent_8k[0]['date'][5:]} {recent_8k[0]['label']}".rstrip())
 
+        mentions = (reddit or {}).get(ticker)
+        if mentions and mentions['mentions'] >= max(REDDIT_MIN_MENTIONS, REDDIT_SURGE_RATIO * mentions['mentions_24h_ago']):
+            flags.append(
+                f"{ticker} 레딧 언급 급증 ({mentions['mentions']}회, 24시간 전 {mentions['mentions_24h_ago']}회)"
+            )
+
     return flags
 
 
@@ -94,6 +104,7 @@ def generate_report(
     news: Optional[Dict[str, List[Dict]]] = None,
     filings: Optional[Dict[str, Dict]] = None,
     comparison: Optional[Dict] = None,
+    reddit: Optional[Dict[str, Optional[Dict]]] = None,
 ) -> Dict:
     """
     Generate a report dictionary from collected stock data
@@ -104,16 +115,17 @@ def generate_report(
         news: ticker -> headlines (scrapers.news_scraper), optional
         filings: ticker -> SEC filings (scrapers.sec_filings), optional
         comparison: competitor and market changes (scrapers.competitor_scraper), optional
+        reddit: ticker -> Reddit mentions (scrapers.reddit_mentions), optional
 
     Returns:
         dict: Report data compatible with notifications.fcm_notifier.send_report
               (and the underlying send_report_notification), containing 'title',
               'summary', 'insights', 'flags', 'timestamp' and 'stocks_count', plus the
-              optional data passed in ('details', 'news', 'filings', 'comparison')
+              optional data passed in ('details', 'news', 'filings', 'comparison', 'reddit')
     """
     # Timezone-aware: the GitHub Actions runner clock is UTC, not the configured TIMEZONE
     timestamp = datetime.now(pytz.timezone(TIMEZONE)).isoformat()
-    details, news, filings = details or {}, news or {}, filings or {}
+    details, news, filings, reddit = details or {}, news or {}, filings or {}, reddit or {}
     tickers = list(stock_data.keys())
 
     valid_entries = {
@@ -141,7 +153,7 @@ def generate_report(
         'title': '📈 Daily Stock Report',
         'summary': summary,
         'insights': insights,
-        'flags': build_flags(stock_data, details, filings),
+        'flags': build_flags(stock_data, details, filings, reddit=reddit),
         'timestamp': timestamp,
         'stocks_count': len(tickers),
         'stock_data': stock_data,
@@ -149,6 +161,7 @@ def generate_report(
         'news': news,
         'filings': filings,
         'comparison': comparison or {},
+        'reddit': reddit,
     }
 
     logger.info(f"Generated report: {summary}")

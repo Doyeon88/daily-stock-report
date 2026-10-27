@@ -63,7 +63,8 @@ def main():
     try:
         # Import data collectors, processors and notifications
         from scrapers import (
-            competitor_scraper, news_scraper, sec_filings, stock_details, yfinance_scraper
+            competitor_scraper, news_scraper, reddit_mentions, sec_filings, stock_details,
+            yfinance_scraper
         )
         from processors import report_generator
         from notifications import fcm_notifier, report_publisher
@@ -72,7 +73,7 @@ def main():
         stock_data = yfinance_scraper.fetch_stock_data(STOCKS_TO_TRACK)
         logger.info("[OK] Stock data collected")
 
-        # Steps 2-5 are extras: a failure in one of them only drops that part of the report
+        # Steps 2-6 are extras: a failure in one of them only drops that part of the report
 
         logger.info("Step 2: Collecting stock details (volume, 52-week range, short interest, analysts, earnings, RSI)...")
         details = _collect_optional(
@@ -91,7 +92,13 @@ def main():
         )
         logger.info(f"- Filings for {len(filings)}/{len(STOCKS_TO_TRACK)} ticker(s)")
 
-        logger.info("Step 5: Comparing with competitors and the market...")
+        logger.info("Step 5: Collecting Reddit mentions...")
+        reddit = _collect_optional(
+            "Reddit mentions", lambda: reddit_mentions.fetch_reddit_mentions(STOCKS_TO_TRACK), {}
+        )
+        logger.info(f"- {sum(1 for mentions in reddit.values() if mentions)}/{len(STOCKS_TO_TRACK)} ticker(s) ranked")
+
+        logger.info("Step 6: Comparing with competitors and the market...")
         comparison = _collect_optional(
             "Competitor comparison", lambda: competitor_scraper.compare_stocks(STOCKS_TO_TRACK), {}
         )
@@ -99,11 +106,11 @@ def main():
 
         # CEO social media monitoring is not implemented
 
-        logger.info("Step 6: Generating report...")
-        report = report_generator.generate_report(stock_data, details, news, filings, comparison)
+        logger.info("Step 7: Generating report...")
+        report = report_generator.generate_report(stock_data, details, news, filings, comparison, reddit)
         logger.info(f"[OK] Report generated ({len(report['flags'])} signal(s))")
 
-        logger.info("Step 7: Sending push notification...")
+        logger.info("Step 8: Sending push notification...")
         # The notification carries only the summary; the report page loads the full report from this file
         report['data_url'] = report_publisher.publish_report(report)
         notified = fcm_notifier.send_report(report)
