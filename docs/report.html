@@ -5,22 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Daily Stock Report</title>
   <style>
-    :root { color-scheme: light dark; --up: #d93025; --down: #1a73e8; --line: #8884; }
+    :root { color-scheme: light dark; --up: #d93025; --down: #1a73e8; --line: #8884; --muted: #888; }
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 1.5rem auto; padding: 0 1rem; line-height: 1.5; }
     h1 { font-size: 1.3rem; margin-bottom: .2rem; }
-    #status { color: #888; font-size: .9rem; margin-bottom: 1rem; }
+    h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+    h3 { font-size: .85rem; color: var(--muted); margin: .9rem 0 .2rem; }
+    #status { color: var(--muted); font-size: .9rem; margin-bottom: .6rem; }
+    #market { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1rem; }
+    .chip { border: 1px solid var(--line); border-radius: 1rem; padding: .1rem .6rem; font-size: .8rem; }
+    #flags { border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .9rem; margin-bottom: 1rem; }
+    #flags ul { margin: 0; padding-left: 1.1rem; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: .6rem .4rem; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
     th:first-child, td.ticker { text-align: left; font-weight: 700; }
-    td.unavailable { text-align: left; color: #888; white-space: normal; }
+    td.unavailable { text-align: left; color: var(--muted); white-space: normal; }
     .up { color: var(--up); }
     .down { color: var(--down); }
-    .hint { color: #888; font-size: .8rem; margin-top: 1rem; }
+    #notice { color: var(--muted); font-size: .85rem; margin-top: .8rem; }
+    .card { border: 1px solid var(--line); border-radius: .6rem; padding: .8rem .9rem; margin-top: 1rem; }
+    dl.lines { display: grid; grid-template-columns: 5.5rem 1fr; gap: .25rem .6rem; margin: 0; font-size: .9rem; }
+    dl.lines dt { color: var(--muted); }
+    dl.lines dd { margin: 0; }
+    ul.items { margin: 0; padding-left: 1.1rem; font-size: .9rem; }
+    ul.items li { margin-bottom: .35rem; }
+    ul.items a { color: inherit; }
+    .meta { color: var(--muted); font-size: .75rem; }
+    .hint { color: var(--muted); font-size: .8rem; margin-top: 1rem; }
     /* 폰 화면: 글자와 여백을 줄여 5열이 한 화면에 들어오게 한다 */
     @media (max-width: 520px) {
       body { padding: 0 .75rem; }
       table { font-size: .88rem; }
       th, td { padding: .5rem .3rem; }
+      dl.lines { grid-template-columns: 4.6rem 1fr; }
     }
     /* 아주 좁은 화면(320px대): 등락률로 충분하므로 '전일 대비' 열은 숨긴다 */
     @media (max-width: 340px) {
@@ -31,13 +47,20 @@
 <body>
   <h1>📈 Daily Stock Report</h1>
   <div id="status"></div>
+  <div id="market"></div>
+  <section id="flags" hidden>
+    <h2>오늘의 신호</h2>
+    <ul id="flag-list"></ul>
+  </section>
   <table>
     <thead>
       <tr><th>종목</th><th>현재가</th><th class="chg">전일 대비</th><th>등락률</th><th>거래량</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
-  <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다.</p>
+  <div id="notice"></div>
+  <div id="cards"></div>
+  <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다. 뉴스·공시는 참고용이며 투자 권유가 아닙니다.</p>
   <script src="./report.js"></script>
 </body>
 </html>

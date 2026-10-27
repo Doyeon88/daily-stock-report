@@ -63,8 +63,10 @@ pip install -r requirements.txt
 
 ## 🔑 API 키 발급
 
-> 현재 구현된 수집은 yfinance(키 불필요)뿐이라 아래 API 키 없이도 실행됩니다.
-> 키는 해당 수집기(뉴스, 재무, 트윗 등)를 구현할 때 필요합니다. 필수는 아래 Firebase 설정입니다.
+> 현재 리포트는 아래 API 키 없이도 실행됩니다. 가격·상세 지표·경쟁사 비교는 yfinance(키 불필요),
+> 뉴스는 Google News RSS(키 불필요)를 씁니다. 키가 있으면 더 좋아지는 선택 항목은 Finnhub(뉴스)와
+> `SEC_USER_AGENT`(SEC 공시)이고, 나머지 키(Alpha Vantage, FMP, NewsAPI, Twitter)는 아직 쓰이지 않습니다.
+> 필수는 아래 Firebase 설정입니다.
 
 ### 1. Alpha Vantage (기술지표, 재무)
 1. https://www.alphavantage.co/api 접속
@@ -242,10 +244,36 @@ pytest
 
 참고:
 - 종목 데이터를 하나도 못 가져왔거나 푸시 알림이 전달되지 않으면 실행이 실패(빨간 X)로 표시되고 GitHub이 실패 메일을 보냅니다. 로그의 `[FAIL]` 줄을 확인하세요.
-- 알림을 탭하면 `docs/report.html`(GitHub Pages)이 열려 종목별 현재가·등락률·거래량 표를 볼 수 있습니다.
+- 알림을 탭하면 `docs/report.html`(GitHub Pages)이 열립니다.
   Pages가 켜져 있어야 하고, 푸시를 받는 페이지(토큰 발급 페이지)와 같은 주소(`REPORT_PAGE_URL`, 기본값은 이 저장소의 Pages 주소)여야 합니다.
 - 공개 저장소는 60일간 활동이 없으면 스케줄 실행이 자동으로 꺼집니다. Actions 탭에서 다시 켜세요.
-- 뉴스·재무 등 다른 수집기를 구현하면 해당 API 키를 Secret으로 등록하고 워크플로의 `env`에도 추가해야 합니다.
+
+#### 리포트에 들어가는 내용
+
+| 위치 | 내용 | 출처 |
+|---|---|---|
+| 알림 본문 | 종목별 현재가·등락률 + **오늘의 신호**(이상 항목만, 최대 8줄) | yfinance |
+| 리포트 페이지 | 시장 지수(S&P 500, Nasdaq, Bitcoin), 가격 표 | yfinance |
+| 종목 카드 | 시간외 변동, 거래량 배수, 52주 위치, 이동평균 대비, RSI, 5·20일 수익률, 공매도, 애널리스트 목표가, 실적 발표일, 경쟁사 등락 | yfinance |
+| 종목 카드 | 최근 뉴스 헤드라인 | Finnhub(키가 있을 때) + Google News RSS |
+| 종목 카드 | 최근 7일 SEC 공시(8-K, 10-Q, 10-K)와 임원 거래(Form 4) 건수 | SEC EDGAR |
+
+신호 기준(거래량 1.5배, RSI 30/70, 시간외 ±3%, 실적 7일 이내, 공매도 15%, 52주 고저점 5%, 8-K 3일 이내)은
+`processors/report_generator.py` 위쪽의 상수로 바꿀 수 있습니다. 항목 하나가 실패해도 나머지 리포트는 그대로 나갑니다.
+
+#### 선택 설정 (GitHub Secret)
+
+- `SEC_USER_AGENT`: SEC 공시를 보려면 필요합니다. SEC는 연락처가 없는 요청을 403으로 거절합니다.
+  `daily-stock-report 내이름 me@example.com` 형태로 **일반 이메일**을 넣으세요.
+  `github`가 들어간 문자열(저장소 주소, GitHub noreply 주소)도 거절됩니다. 설정하지 않으면 공시는 건너뜁니다.
+- `FINNHUB_API_KEY`: https://finnhub.io 무료 키. 없으면 Google News RSS만 쓰며, 이쪽은 키워드 검색이라
+  종목과 관련 없는 기사가 섞일 수 있습니다.
+
+#### 상세 데이터 저장 (`report-data` 브랜치)
+
+알림에는 4KB밖에 못 담아서, 뉴스와 상세 지표는 JSON 파일로 `report-data` 브랜치에 커밋해 두고 알림 링크에 그 주소를 싣습니다.
+브랜치가 없거나 커밋에 실패하면 가격 표와 신호만 담은 링크로 대신하므로 알림 탭은 계속 동작합니다.
+이 커밋을 위해 워크플로에 `contents: write` 권한이 있습니다. `[skip ci]`로 커밋해서 테스트나 Pages 배포를 일으키지 않습니다.
 
 ### 옵션 2: Linux/Mac (Cron)
 
@@ -337,6 +365,11 @@ Error: Failed to initialize FCM
 → 알림에 링크가 없던 옛 버전으로 보낸 알림이거나, `REPORT_PAGE_URL`이 비어 있는 경우입니다.
 → 링크는 푸시를 받는 페이지(`github.io`)와 같은 호스트여야만 열립니다. 다른 주소는 Firebase SDK가 무시합니다.
 → 열렸는데 "리포트 데이터가 없습니다"가 나오면 주소 뒤의 `#...` 부분이 잘린 것입니다.
+→ "상세 데이터를 불러오지 못해 핵심 표만 보여 드립니다"가 나오면 `report-data` 브랜치가 없거나 저장에 실패한 것입니다(Actions 로그의 `Failed to publish report data` 확인).
+
+### 리포트에 뉴스나 공시가 안 보임
+→ 공시: `SEC_USER_AGENT` Secret이 없거나 SEC가 거절한 경우입니다(로그의 `SEC filings skipped` / `403` 확인).
+→ 뉴스: 로그의 `news unavailable` 확인. Google News RSS는 비공식이라 가끔 실패합니다. Finnhub 키를 넣으면 보완됩니다.
 
 ### 푸시 알림 받지 못함
 → `FCM_DEVICE_TOKEN` 확인
