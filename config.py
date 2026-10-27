@@ -7,12 +7,23 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+
+def _header_secret(name):
+    """
+    Environment value for something that is sent in an HTTP header, or None if unset/empty
+
+    Surrounding whitespace is removed: a secret pasted into GitHub often ends with a newline,
+    which HTTP headers reject ("Invalid header value").
+    """
+    return (os.getenv(name) or '').strip() or None
+
+
 # ============================================
 # API Keys
 # ============================================
 ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY')
 FMP_API_KEY = os.getenv('FMP_API_KEY')
-FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY')
+FINNHUB_API_KEY = _header_secret('FINNHUB_API_KEY')
 NEWSAPI_KEY = os.getenv('NEWSAPI_KEY')
 TWITTER_API_KEY = os.getenv('TWITTER_API_KEY')
 TWITTER_API_SECRET = os.getenv('TWITTER_API_SECRET')
@@ -88,7 +99,7 @@ REPORT_PAGE_URL = os.getenv(
 
 # 리포트 상세 데이터(JSON) 저장소. 알림 한도(4KB)에 다 담을 수 없어서 별도 브랜치에 커밋하고,
 # 알림 링크에는 그 파일의 주소를 싣습니다. 토큰이 없으면(로컬 실행) 건너뛰고 핵심 표만 링크에 담습니다.
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GITHUB_TOKEN = _header_secret('GITHUB_TOKEN')
 GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY')  # "owner/repo", GitHub Actions가 자동으로 채움
 REPORT_DATA_BRANCH = os.getenv('REPORT_DATA_BRANCH') or 'report-data'
 
@@ -112,10 +123,11 @@ NEWS_LOOKBACK_DAYS = 3  # 최근 3일 이내 뉴스만
 
 # SEC EDGAR 공시 설정. SEC는 User-Agent에 연락처(이메일)를 요구하고, 없으면 403으로 거절합니다.
 # 'github'가 들어간 문자열(저장소 주소, GitHub noreply 주소)도 403이므로 일반 이메일을 쓰세요.
-# 예: SEC_USER_AGENT="daily-stock-report 내이름 me@example.com"
+# 영문(ASCII) 한 줄이어야 합니다(한글·줄바꿈은 HTTP 헤더에 못 담습니다. 앞뒤 공백·줄바꿈은 자동으로 지웁니다).
+# 예: SEC_USER_AGENT="daily-stock-report YourName me@example.com"
 # 기본값을 두지 않습니다(가짜 연락처를 보낼 수 없고, 이메일을 저장소에 올리지 않으려고).
 # 설정하지 않으면 SEC 공시는 건너뜁니다. GitHub에서는 Actions Secret으로 넣으세요.
-SEC_USER_AGENT = os.getenv('SEC_USER_AGENT')
+SEC_USER_AGENT = _header_secret('SEC_USER_AGENT')
 SEC_LOOKBACK_DAYS = 7  # 최근 7일 이내 공시만
 
 # CEO 모니터링 설정

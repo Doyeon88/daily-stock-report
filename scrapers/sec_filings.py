@@ -102,6 +102,10 @@ def fetch_sec_filings(tickers: List[str], today: Optional[date] = None) -> Dict[
         # SEC answers 403 to requests without a contact address, so do not even try
         logger.warning("SEC filings skipped: set SEC_USER_AGENT to something like 'daily-stock-report name me@example.com'")
         return {}
+    if not (SEC_USER_AGENT.isascii() and SEC_USER_AGENT.isprintable()):
+        # An HTTP header cannot carry Korean text or line breaks; requests would fail with an obscure error
+        logger.warning("SEC filings skipped: SEC_USER_AGENT must be plain ASCII on a single line (no Korean, no line breaks)")
+        return {}
 
     today = today or datetime.now(pytz.timezone(TIMEZONE)).date()
     since = (today - timedelta(days=SEC_LOOKBACK_DAYS)).isoformat()
@@ -113,8 +117,8 @@ def fetch_sec_filings(tickers: List[str], today: Optional[date] = None) -> Dict[
         )
     except Exception as e:
         logger.error(
-            f"SEC ticker list unavailable (a 403 means SEC rejected the User-Agent: use a plain "
-            f"contact email and no 'github' in it): {e}"
+            f"SEC ticker list unavailable (check SEC_USER_AGENT: SEC answers 403 to a missing contact "
+            f"email or to a value containing 'github'): {e}"
         )
         return {}
     ciks = {entry['ticker'].upper(): int(entry['cik_str']) for entry in listing.values()}

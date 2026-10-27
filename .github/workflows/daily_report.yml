@@ -36,7 +36,7 @@ jobs:
           FCM_DEVICE_TOKEN: ${{ secrets.FCM_DEVICE_TOKEN }}
           # (선택) Finnhub 뉴스. 없으면 Google News RSS만 사용
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          # (선택) SEC가 요구하는 연락처 User-Agent, 예: "daily-stock-report 내이름 me@example.com"
+          # (선택) SEC가 요구하는 연락처 User-Agent, 영문 한 줄. 예: daily-stock-report YourName me@example.com
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           # 상세 리포트 저장용. GITHUB_REPOSITORY는 Actions가 자동으로 채운다
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

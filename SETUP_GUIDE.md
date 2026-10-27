@@ -264,8 +264,9 @@ pytest
 #### 선택 설정 (GitHub Secret)
 
 - `SEC_USER_AGENT`: SEC 공시를 보려면 필요합니다. SEC는 연락처가 없는 요청을 403으로 거절합니다.
-  `daily-stock-report 내이름 me@example.com` 형태로 **일반 이메일**을 넣으세요.
-  `github`가 들어간 문자열(저장소 주소, GitHub noreply 주소)도 거절됩니다. 설정하지 않으면 공시는 건너뜁니다.
+  `daily-stock-report YourName me@example.com` 형태로 **실제로 받을 수 있는 일반 이메일**을 넣으세요.
+  영문(ASCII) 한 줄이어야 하고(한글은 HTTP 헤더에 못 담아 요청이 실패합니다), 앞뒤 공백과 줄바꿈은 자동으로 지워집니다.
+  `github`가 들어간 문자열(저장소 주소, GitHub noreply 주소)은 거절됩니다. 설정하지 않으면 공시는 건너뜁니다.
 - `FINNHUB_API_KEY`: https://finnhub.io 무료 키. 없으면 Google News RSS만 쓰며, 이쪽은 키워드 검색이라
   종목과 관련 없는 기사가 섞일 수 있습니다.
 

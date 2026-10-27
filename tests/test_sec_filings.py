@@ -120,3 +120,16 @@ def test_without_a_user_agent_nothing_is_requested(monkeypatch):
 
     assert sec_filings.fetch_sec_filings(['BE'], today=date(2026, 10, 27)) == {}
     get_json.assert_not_called()
+
+
+@pytest.mark.parametrize('user_agent', [
+    'daily-stock-report 송도연 me@example.com',     # Korean cannot be sent in an HTTP header
+    'daily-stock-report\nme@example.com',           # neither can a line break
+])
+def test_user_agent_that_cannot_be_an_http_header_is_skipped(monkeypatch, user_agent):
+    monkeypatch.setattr(sec_filings, 'SEC_USER_AGENT', user_agent)
+    get_json = MagicMock()
+    monkeypatch.setattr(sec_filings, '_get_json', get_json)
+
+    assert sec_filings.fetch_sec_filings(['BE'], today=date(2026, 10, 27)) == {}
+    get_json.assert_not_called()
