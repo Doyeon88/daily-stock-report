@@ -126,7 +126,8 @@ NEWS_LOOKBACK_DAYS = 3  # 최근 3일 이내 뉴스만
 # 영문(ASCII) 한 줄이어야 합니다(한글·줄바꿈은 HTTP 헤더에 못 담습니다. 앞뒤 공백·줄바꿈은 자동으로 지웁니다).
 # 예: SEC_USER_AGENT="daily-stock-report YourName me@example.com"
 # 기본값을 두지 않습니다(가짜 연락처를 보낼 수 없고, 이메일을 저장소에 올리지 않으려고).
-# 설정하지 않으면 SEC 공시는 건너뜁니다. GitHub에서는 Actions Secret으로 넣으세요.
+# 설정하지 않으면 SEC 직접 조회는 건너뛰고 Yahoo Finance의 공시 목록으로 대신합니다(SEC가 클라우드 IP를
+# 거절하는 GitHub Actions에서도 마찬가지). GitHub에서는 Actions Secret으로 넣으세요.
 SEC_USER_AGENT = _header_secret('SEC_USER_AGENT')
 SEC_LOOKBACK_DAYS = 7  # 최근 7일 이내 공시만
 

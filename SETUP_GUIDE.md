@@ -64,8 +64,9 @@ pip install -r requirements.txt
 ## 🔑 API 키 발급
 
 > 현재 리포트는 아래 API 키 없이도 실행됩니다. 가격·상세 지표·경쟁사 비교는 yfinance(키 불필요),
-> 뉴스는 Google News RSS(키 불필요)를 씁니다. 키가 있으면 더 좋아지는 선택 항목은 Finnhub(뉴스)와
-> `SEC_USER_AGENT`(SEC 공시)이고, 나머지 키(Alpha Vantage, FMP, NewsAPI, Twitter)는 아직 쓰이지 않습니다.
+> 뉴스는 Google News RSS(키 불필요), SEC 공시는 Yahoo Finance 목록(키 불필요)을 씁니다. 키가 있으면 더 좋아지는
+> 선택 항목은 Finnhub(뉴스)와 `SEC_USER_AGENT`(SEC 직접 조회)이고, 나머지 키(Alpha Vantage, FMP, NewsAPI, Twitter)는
+> 아직 쓰이지 않습니다.
 > 필수는 아래 Firebase 설정입니다.
 
 ### 1. Alpha Vantage (기술지표, 재무)
@@ -256,17 +257,21 @@ pytest
 | 리포트 페이지 | 시장 지수(S&P 500, Nasdaq, Bitcoin), 가격 표 | yfinance |
 | 종목 카드 | 시간외 변동, 거래량 배수, 52주 위치, 이동평균 대비, RSI, 5·20일 수익률, 공매도, 애널리스트 목표가, 실적 발표일, 경쟁사 등락 | yfinance |
 | 종목 카드 | 최근 뉴스 헤드라인 | Finnhub(키가 있을 때) + Google News RSS |
-| 종목 카드 | 최근 7일 SEC 공시(8-K, 10-Q, 10-K)와 임원 거래(Form 4) 건수 | SEC EDGAR |
+| 종목 카드 | 최근 7일 공시(8-K, 10-Q, 10-K). SEC 직접 조회가 되면 8-K 항목 설명과 임원 거래(Form 4) 건수도 | SEC EDGAR, 안 되면 Yahoo Finance |
 
 신호 기준(거래량 1.5배, RSI 30/70, 시간외 ±3%, 실적 7일 이내, 공매도 15%, 52주 고저점 5%, 8-K 3일 이내)은
 `processors/report_generator.py` 위쪽의 상수로 바꿀 수 있습니다. 항목 하나가 실패해도 나머지 리포트는 그대로 나갑니다.
 
 #### 선택 설정 (GitHub Secret)
 
-- `SEC_USER_AGENT`: SEC 공시를 보려면 필요합니다. SEC는 연락처가 없는 요청을 403으로 거절합니다.
+- `SEC_USER_AGENT`: SEC에서 공시를 **직접** 가져오려면 필요합니다(8-K 항목 설명과 임원 거래 건수까지 나옵니다).
+  SEC는 연락처가 없는 요청을 403으로 거절합니다.
   `daily-stock-report YourName me@example.com` 형태로 **실제로 받을 수 있는 일반 이메일**을 넣으세요.
   영문(ASCII) 한 줄이어야 하고(한글은 HTTP 헤더에 못 담아 요청이 실패합니다), 앞뒤 공백과 줄바꿈은 자동으로 지워집니다.
-  `github`가 들어간 문자열(저장소 주소, GitHub noreply 주소)은 거절됩니다. 설정하지 않으면 공시는 건너뜁니다.
+  `github`가 들어간 문자열(저장소 주소, GitHub noreply 주소)은 거절됩니다.
+  **GitHub Actions에서는 SEC가 러너(클라우드) IP를 거절해서 값을 제대로 넣어도 403이 날 수 있습니다.**
+  설정이 없거나 SEC가 답하지 않으면 종목별로 Yahoo Finance의 공시 목록으로 자동 대체됩니다.
+  다만 Yahoo 목록은 덜 완전해서 일부 공시(예: 실적 발표 8-K)가 빠질 수 있고, 임원 거래 건수와 8-K 항목 설명은 없습니다.
 - `FINNHUB_API_KEY`: https://finnhub.io 무료 키. 없으면 Google News RSS만 쓰며, 이쪽은 키워드 검색이라
   종목과 관련 없는 기사가 섞일 수 있습니다.
 
@@ -369,7 +374,11 @@ Error: Failed to initialize FCM
 → "상세 데이터를 불러오지 못해 핵심 표만 보여 드립니다"가 나오면 `report-data` 브랜치가 없거나 저장에 실패한 것입니다(Actions 로그의 `Failed to publish report data` 확인).
 
 ### 리포트에 뉴스나 공시가 안 보임
-→ 공시: `SEC_USER_AGENT` Secret이 없거나 SEC가 거절한 경우입니다(로그의 `SEC filings skipped` / `403` 확인).
+→ 공시: 로그의 `Fetching filings` 이후 줄을 보세요. `SEC EDGAR skipped`는 `SEC_USER_AGENT`가 없거나 형식이 틀린 것,
+  `SEC EDGAR unavailable ... 403 Forbidden: ...`은 SEC가 거절한 것이고 뒤에 SEC가 직접 밝힌 이유가 붙습니다
+  (`Request Rate Threshold Exceeded`는 접속 속도 한도 초과로, 공유 IP를 쓰는 GitHub Actions에서 흔합니다.
+  `Undeclared Automated Tool`은 User-Agent 문제입니다). 403은 재시도하지 않고 바로 `Using Yahoo Finance's filing list`로 넘어갑니다.
+  최근 7일에 해당 서식의 공시가 없으면 카드에 공시 구역이 없는 것이 정상입니다.
 → 뉴스: 로그의 `news unavailable` 확인. Google News RSS는 비공식이라 가끔 실패합니다. Finnhub 키를 넣으면 보완됩니다.
 
 ### 푸시 알림 받지 못함

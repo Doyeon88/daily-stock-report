@@ -242,7 +242,8 @@ function renderReport(doc, data) {
     if (lines.length) card.appendChild(list);
 
     if (filingInfo.filings.length || filingInfo.form4_count) {
-      card.appendChild(element('h3', '', 'SEC 공시 (최근 7일)'));
+      // Yahoo가 대신 준 목록은 임원 거래(Form 4)가 없고 8-K 항목 설명도 없다
+      card.appendChild(element('h3', '', 'SEC 공시 (최근 7일)' + (filingInfo.source === 'yahoo' ? ' · Yahoo Finance 제공' : '')));
       const ul = element('ul', 'items');
       for (const filing of filingInfo.filings) {
         const f = formatFiling(filing);

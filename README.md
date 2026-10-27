@@ -4,7 +4,7 @@
 알림을 탭하면 시장 지수, 종목별 상세 지표, 뉴스, SEC 공시가 담긴 리포트 페이지가 열립니다.
 
 - 추적 종목: `config.py`의 `STOCKS_TO_TRACK` (현재 BE, BWXT, CRCL, SECZ)
-- 데이터: yfinance(가격·지표), Google News RSS와 Finnhub(뉴스), SEC EDGAR(공시)
+- 데이터: yfinance(가격·지표), Google News RSS와 Finnhub(뉴스), SEC EDGAR 또는 Yahoo Finance(공시)
 - 알림: Firebase Cloud Messaging, 리포트 페이지: GitHub Pages(`docs/`)
 - 실행: GitHub Actions 스케줄(권장), 또는 로컬 cron / 작업 스케줄러
 
