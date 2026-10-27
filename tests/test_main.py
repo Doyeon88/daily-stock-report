@@ -1,5 +1,6 @@
 """
-Unit tests for main.py: the exit code must reflect failures so a scheduled run fails visibly
+Unit tests for main.py: the exit code must reflect failures so a scheduled run fails visibly,
+and a failing optional collector (details, news, filings, comparison) must not stop the report
 """
 
 from unittest.mock import MagicMock
@@ -7,8 +8,17 @@ from unittest.mock import MagicMock
 import pytest
 
 import main
-from notifications import fcm_notifier
-from scrapers import yfinance_scraper
+from notifications import fcm_notifier, report_publisher
+from scrapers import (
+    competitor_scraper, news_scraper, sec_filings, stock_details, yfinance_scraper
+)
+
+OPTIONAL_COLLECTORS = (
+    (stock_details, 'fetch_stock_details', {}),
+    (news_scraper, 'fetch_news', {}),
+    (sec_filings, 'fetch_sec_filings', {}),
+    (competitor_scraper, 'compare_stocks', {'peers': {}, 'market': []}),
+)
 
 
 def _ok(ticker):
@@ -23,6 +33,14 @@ def _failed(ticker):
         'ticker': ticker, 'price': None, 'previous_close': None, 'change': None,
         'change_percent': None, 'volume': None, 'error': 'network error',
     }
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """No test in this file may touch the network: replace every collector and the publisher"""
+    for module, name, empty in OPTIONAL_COLLECTORS:
+        monkeypatch.setattr(module, name, MagicMock(return_value=empty))
+    monkeypatch.setattr(report_publisher, 'publish_report', MagicMock(return_value=None))
 
 
 def _run_main(monkeypatch, stock_data, notified, fcm_enabled=True):
@@ -67,3 +85,34 @@ def test_unexpected_exception_exits_with_error(monkeypatch):
     with pytest.raises(SystemExit) as exc_info:
         main.main()
     assert exc_info.value.code == 1
+
+
+@pytest.mark.parametrize('module, name', [(m, n) for m, n, _ in OPTIONAL_COLLECTORS])
+def test_failing_optional_collector_does_not_stop_the_report(monkeypatch, module, name):
+    monkeypatch.setattr(module, name, MagicMock(side_effect=RuntimeError('source down')))
+    send_report = MagicMock(return_value=True)
+    monkeypatch.setattr(yfinance_scraper, 'fetch_stock_data', MagicMock(return_value={'A': _ok('A')}))
+    monkeypatch.setattr(fcm_notifier, 'send_report', send_report)
+
+    main.main()  # must not raise SystemExit
+
+    report = send_report.call_args[0][0]
+    assert report['stock_data']['A']['price'] == 10.0
+
+
+def test_collected_extras_reach_the_report_and_the_published_link(monkeypatch):
+    monkeypatch.setattr(stock_details, 'fetch_stock_details', MagicMock(return_value={'A': {'rsi14': 25.0}}))
+    monkeypatch.setattr(news_scraper, 'fetch_news', MagicMock(return_value={'A': [{'title': 'Headline'}]}))
+    monkeypatch.setattr(
+        report_publisher, 'publish_report', MagicMock(return_value='https://raw.example/report.json')
+    )
+    send_report = MagicMock(return_value=True)
+    monkeypatch.setattr(yfinance_scraper, 'fetch_stock_data', MagicMock(return_value={'A': _ok('A')}))
+    monkeypatch.setattr(fcm_notifier, 'send_report', send_report)
+
+    main.main()
+
+    report = send_report.call_args[0][0]
+    assert report['news'] == {'A': [{'title': 'Headline'}]}
+    assert 'A RSI 25 과매도' in report['flags']
+    assert report['data_url'] == 'https://raw.example/report.json'

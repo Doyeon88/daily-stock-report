@@ -7,8 +7,10 @@ on:
     - cron: '0 0 * * 2-6'
   workflow_dispatch:  # 수동 실행 버튼
 
+# 쓰기 권한은 상세 리포트(JSON)를 report-data 브랜치에 커밋하려고 필요하다 (notifications/report_publisher.py).
+# 이 토큰은 main에도 쓸 수 있으므로 requirements.txt의 패키지는 믿을 수 있는 것만 유지할 것.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   run-report:
@@ -27,10 +29,15 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run daily stock report
-        # 현재 구현된 수집·알림에 필요한 Secret만 전달한다.
-        # 다른 수집기(뉴스, 재무 등)를 구현하면 해당 API 키 Secret을 여기에 추가한다.
+        # 지금 쓰는 Secret만 전달한다. 선택 항목은 Secret을 안 만들어 두면 빈 값이 되어 건너뛴다.
         env:
           # 서비스 계정 키 JSON 파일의 "내용 전체"를 Secret에 넣는다 (파일 경로 아님)
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
           FCM_DEVICE_TOKEN: ${{ secrets.FCM_DEVICE_TOKEN }}
+          # (선택) Finnhub 뉴스. 없으면 Google News RSS만 사용
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          # (선택) SEC가 요구하는 연락처 User-Agent, 예: "daily-stock-report 내이름 me@example.com"
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          # 상세 리포트 저장용. GITHUB_REPOSITORY는 Actions가 자동으로 채운다
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python main.py

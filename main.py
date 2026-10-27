@@ -39,6 +39,17 @@ def configure_logging():
     )
 
 
+def _collect_optional(name, collect, default):
+    """
+    Run an optional data collector; the report is still sent without it if it fails
+    """
+    try:
+        return collect()
+    except Exception as e:
+        logger.error(f"[WARN] {name} unavailable, continuing without it: {e}")
+        return default
+
+
 def main():
     """
     Main function to run daily stock report
@@ -50,77 +61,51 @@ def main():
     logger.info("=" * 60)
 
     try:
-        # Import and run data collectors
-        from scrapers import yfinance_scraper
-        # TODO: Import and run remaining data collectors
-        # from scrapers import (
-        #     alpha_vantage,
-        #     fmp_scraper,
-        #     finnhub_scraper,
-        #     news_scraper,
-        #     short_interest,
-        #     sec_filings,
-        #     twitter_scraper,
-        #     competitor_scraper,
-        #     technical_analysis
-        # )
-
-        # Import and run data processors
+        # Import data collectors, processors and notifications
+        from scrapers import (
+            competitor_scraper, news_scraper, sec_filings, stock_details, yfinance_scraper
+        )
         from processors import report_generator
-        # TODO: Import and run remaining data processors
-        # from processors import (
-        #     data_cleaner,
-        #     metrics_calculator,
-        #     comparison_builder
-        # )
-
-        # Import and send notifications
-        from notifications import fcm_notifier
+        from notifications import fcm_notifier, report_publisher
 
         logger.info("Step 1: Collecting stock data...")
-        # 1. Collect basic stock data
         stock_data = yfinance_scraper.fetch_stock_data(STOCKS_TO_TRACK)
         logger.info("[OK] Stock data collected")
 
-        logger.info("Step 2: Collecting financial data...")
-        # 2. Collect financial statements
-        # financial_data = fmp_scraper.fetch_financials(STOCKS_TO_TRACK)
-        logger.info("- Skipped (not implemented yet)")
+        # Steps 2-5 are extras: a failure in one of them only drops that part of the report
+
+        logger.info("Step 2: Collecting stock details (volume, 52-week range, short interest, analysts, earnings, RSI)...")
+        details = _collect_optional(
+            "Stock details",
+            lambda: stock_details.fetch_stock_details(STOCKS_TO_TRACK, stock_data), {}
+        )
+        logger.info(f"- Details for {sum(1 for d in details.values() if d)}/{len(STOCKS_TO_TRACK)} ticker(s)")
 
         logger.info("Step 3: Collecting news...")
-        # 3. Collect news
-        # news_data = news_scraper.fetch_news(STOCKS_TO_TRACK)
-        logger.info("- Skipped (not implemented yet)")
+        news = _collect_optional("News", lambda: news_scraper.fetch_news(STOCKS_TO_TRACK), {})
+        logger.info(f"- {sum(len(items) for items in news.values())} headline(s)")
 
-        logger.info("Step 4: Collecting short interest data...")
-        # 4. Collect short interest
-        # short_data = short_interest.fetch_short_interest(STOCKS_TO_TRACK)
-        logger.info("- Skipped (not implemented yet)")
+        logger.info("Step 4: Collecting SEC filings...")
+        filings = _collect_optional(
+            "SEC filings", lambda: sec_filings.fetch_sec_filings(STOCKS_TO_TRACK), {}
+        )
+        logger.info(f"- Filings for {len(filings)}/{len(STOCKS_TO_TRACK)} ticker(s)")
 
-        logger.info("Step 5: Monitoring CEO activities...")
-        # 5. Monitor CEO social media
-        # ceo_data = twitter_scraper.fetch_ceo_tweets(STOCKS_TO_TRACK)
-        logger.info("- Skipped (not implemented yet)")
+        logger.info("Step 5: Comparing with competitors and the market...")
+        comparison = _collect_optional(
+            "Competitor comparison", lambda: competitor_scraper.compare_stocks(STOCKS_TO_TRACK), {}
+        )
+        logger.info(f"- {len(comparison.get('market', []))} market index(es)")
 
-        logger.info("Step 6: Analyzing technical indicators...")
-        # 6. Calculate technical indicators
-        # technical_data = technical_analysis.calculate_indicators(STOCKS_TO_TRACK)
-        logger.info("- Skipped (not implemented yet)")
+        # CEO social media monitoring is not implemented
 
-        logger.info("Step 7: Building competitor comparison...")
-        # 7. Build competitor comparison
-        # competitor_data = competitor_scraper.compare_stocks(STOCKS_TO_TRACK)
-        logger.info("- Skipped (not implemented yet)")
+        logger.info("Step 6: Generating report...")
+        report = report_generator.generate_report(stock_data, details, news, filings, comparison)
+        logger.info(f"[OK] Report generated ({len(report['flags'])} signal(s))")
 
-        logger.info("Step 8: Generating report...")
-        # 8. Generate comprehensive report
-        # TODO: Pass additional collected data (financial_data, news_data, short_data,
-        # ceo_data, technical_data, competitor_data) once those collectors are implemented
-        report = report_generator.generate_report(stock_data)
-        logger.info("[OK] Report generated")
-
-        logger.info("Step 9: Sending push notification...")
-        # 9. Send push notification via FCM
+        logger.info("Step 7: Sending push notification...")
+        # The notification carries only the summary; the report page loads the full report from this file
+        report['data_url'] = report_publisher.publish_report(report)
         notified = fcm_notifier.send_report(report)
         if notified:
             logger.info("[OK] Notification sent")

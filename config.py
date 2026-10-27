@@ -40,6 +40,21 @@ COMPETITOR_MAP = {
     'SECZ': ['COIN', 'GLXY', 'BKKT'],         # Securitize의 경쟁사 (디지털 자산 인프라)
 }
 
+# 뉴스 검색(Google News)에 쓰는 회사명
+STOCK_NAMES = {
+    'BE': 'Bloom Energy',
+    'BWXT': 'BWX Technologies',
+    'CRCL': 'Circle Internet Group',
+    'SECZ': 'Securitize',
+}
+
+# 시장 맥락으로 함께 보여 줄 지수 (티커, 표시 이름)
+MARKET_CONTEXT = [
+    ('^GSPC', 'S&P 500'),
+    ('^IXIC', 'Nasdaq'),
+    ('BTC-USD', 'Bitcoin'),
+]
+
 # ============================================
 # Schedule Configuration
 # ============================================
@@ -71,6 +86,12 @@ REPORT_PAGE_URL = os.getenv(
     'REPORT_PAGE_URL', 'https://doyeon88.github.io/daily-stock-report/report.html'
 )
 
+# 리포트 상세 데이터(JSON) 저장소. 알림 한도(4KB)에 다 담을 수 없어서 별도 브랜치에 커밋하고,
+# 알림 링크에는 그 파일의 주소를 싣습니다. 토큰이 없으면(로컬 실행) 건너뛰고 핵심 표만 링크에 담습니다.
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY')  # "owner/repo", GitHub Actions가 자동으로 채움
+REPORT_DATA_BRANCH = os.getenv('REPORT_DATA_BRANCH') or 'report-data'
+
 # 이메일 설정 (선택사항)
 ENABLE_EMAIL_NOTIFICATION = False
 EMAIL_FROM = os.getenv('EMAIL_FROM')
@@ -87,6 +108,15 @@ RETRY_DELAY = 2  # seconds
 NEWS_SOURCES = ['reuters', 'marketwatch', 'cnbc', 'bloomberg']
 NEWS_LANGUAGE = 'en'
 NEWS_LIMIT = 5  # 각 종목당 상위 5개 뉴스
+NEWS_LOOKBACK_DAYS = 3  # 최근 3일 이내 뉴스만
+
+# SEC EDGAR 공시 설정. SEC는 User-Agent에 연락처(이메일)를 요구하고, 없으면 403으로 거절합니다.
+# 'github'가 들어간 문자열(저장소 주소, GitHub noreply 주소)도 403이므로 일반 이메일을 쓰세요.
+# 예: SEC_USER_AGENT="daily-stock-report 내이름 me@example.com"
+# 기본값을 두지 않습니다(가짜 연락처를 보낼 수 없고, 이메일을 저장소에 올리지 않으려고).
+# 설정하지 않으면 SEC 공시는 건너뜁니다. GitHub에서는 Actions Secret으로 넣으세요.
+SEC_USER_AGENT = os.getenv('SEC_USER_AGENT')
+SEC_LOOKBACK_DAYS = 7  # 최근 7일 이내 공시만
 
 # CEO 모니터링 설정
 CEO_TWEETS_LIMIT = 5

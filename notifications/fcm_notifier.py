@@ -7,14 +7,18 @@ import base64
 import json
 import logging
 from typing import Dict, List, Optional
+from urllib.parse import quote
 import firebase_admin
 from firebase_admin import credentials, messaging
 
 from config import (
     FIREBASE_CREDENTIALS_PATH, FCM_DEVICE_TOKEN, ENABLE_FCM_NOTIFICATION, REPORT_PAGE_URL
 )
+from processors.report_payload import build_core_payload
 
 logger = logging.getLogger(__name__)
+
+MAX_FLAGS_IN_BODY = 8  # keep the notification short; the report page lists everything
 
 
 def _load_credentials(value: str):
@@ -33,9 +37,11 @@ def _build_report_link(report_data: Dict) -> Optional[str]:
     """
     Build the URL opened when the notification is tapped
 
-    The report travels in the URL fragment as base64url JSON, so the static report page
-    needs no backend and nothing has to be committed. The page must be on the same host
-    as the service worker, otherwise the Firebase SDK ignores the link.
+    The price table and signals travel in the URL fragment as base64url JSON, so the page
+    works even without any stored data. If the full report was published (report_data['data_url']),
+    the page also gets its address in the `d` query parameter and loads the details from there.
+    The page must be on the same host as the service worker, otherwise the Firebase SDK
+    ignores the link.
 
     Returns:
         str: Report page URL, or None if REPORT_PAGE_URL is not configured
@@ -43,17 +49,11 @@ def _build_report_link(report_data: Dict) -> Optional[str]:
     if not REPORT_PAGE_URL:
         return None
 
-    rows = []
-    for ticker, data in (report_data.get('stock_data') or {}).items():
-        error = str(data['error'])[:80] if data.get('error') else None
-        rows.append([
-            ticker, data.get('price'), data.get('previous_close'), data.get('change'),
-            data.get('change_percent'), data.get('volume'), error,
-        ])
-
-    payload = {'v': 1, 't': report_data.get('timestamp', ''), 's': rows}
-    raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
-    return f"{REPORT_PAGE_URL}#{base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')}"
+    raw = json.dumps(build_core_payload(report_data), ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    fragment = base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
+    data_url = report_data.get('data_url')
+    query = f"?d={quote(data_url, safe='')}" if data_url else ''
+    return f"{REPORT_PAGE_URL}{query}#{fragment}"
 
 
 class FCMNotifier:
@@ -184,6 +184,13 @@ class FCMNotifier:
             # Add all insights (the notification is the only place the report is delivered)
             for insight in report_data.get('insights', []):
                 body += f"• {insight}\n"
+
+            # Add what is unusual today; details are on the report page
+            flags = report_data.get('flags') or []
+            if flags:
+                body += "\n" + "".join(f"▸ {flag}\n" for flag in flags[:MAX_FLAGS_IN_BODY])
+                if len(flags) > MAX_FLAGS_IN_BODY:
+                    body += f"▸ 외 {len(flags) - MAX_FLAGS_IN_BODY}건\n"
 
             # Prepare data payload
             data = {
