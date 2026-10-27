@@ -45,4 +45,5 @@ def build_full_payload(report: Dict) -> Dict:
         'filings': report.get('filings') or {},
         'comparison': report.get('comparison') or {},
         'reddit': report.get('reddit') or {},
+        'reddit_history': report.get('reddit_history') or {},
     }

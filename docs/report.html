@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Daily Stock Report</title>
   <style>
-    :root { color-scheme: light dark; --up: #d93025; --down: #1a73e8; --line: #8884; --muted: #888; }
+    :root { color-scheme: light dark; --up: #d93025; --down: #1a73e8; --line: #8884; --muted: #888; --accent: #1a73e8; }
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 1.5rem auto; padding: 0 1rem; line-height: 1.5; }
     h1 { font-size: 1.3rem; margin-bottom: .2rem; }
     h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
@@ -30,6 +30,18 @@
     ul.items li { margin-bottom: .35rem; }
     ul.items a { color: inherit; }
     .meta { color: var(--muted); font-size: .75rem; }
+    .trend .tabs { display: flex; gap: .4rem; margin: .3rem 0 .4rem; }
+    .trend button { font: inherit; font-size: .8rem; padding: .15rem .7rem; border: 1px solid var(--line); border-radius: 1rem; background: none; color: inherit; cursor: pointer; }
+    .trend button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .trend-note { color: var(--muted); font-size: .75rem; }
+    .chart-title { display: flex; justify-content: space-between; font-size: .8rem; margin-top: .6rem; }
+    .chart-title b { font-weight: 600; }
+    svg.chart { width: 100%; height: auto; display: block; }
+    svg.chart path { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; }
+    svg.chart circle { fill: var(--accent); }
+    svg.chart .grid { stroke: var(--line); stroke-width: .6; }
+    svg.chart text { fill: var(--muted); font-size: 8px; }
+    p.empty { color: var(--muted); font-size: .85rem; margin: .3rem 0; }
     .hint { color: var(--muted); font-size: .8rem; margin-top: 1rem; }
     /* 폰 화면: 글자와 여백을 줄여 5열이 한 화면에 들어오게 한다 */
     @media (max-width: 520px) {

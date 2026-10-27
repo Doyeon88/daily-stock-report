@@ -23,9 +23,10 @@ Firebase 설정, GitHub Actions Secret 등록, 자동화 방법은 [SETUP_GUIDE.
 | 경로 | 역할 |
 |---|---|
 | `main.py` | 수집 → 리포트 생성 → 알림 전송. 가격 수집 전부 실패나 알림 미전달 시 종료 코드 1 |
+| `reddit_snapshot.py` | 레딧 언급 기록만 남기는 매일 실행용(알림 없음), `Reddit Snapshot` 워크플로가 호출 |
 | `scrapers/` | 데이터 수집: `yfinance_scraper`(가격), `stock_details`(지표), `news_scraper`, `sec_filings`, `reddit_mentions`, `competitor_scraper` |
-| `processors/` | 리포트 생성과 신호 계산(`report_generator`), 페이지용 데이터(`report_payload`) |
-| `notifications/` | FCM 푸시 알림(`fcm_notifier`), 상세 리포트 저장(`report_publisher`) |
+| `processors/` | 리포트 생성과 신호 계산(`report_generator`), 페이지용 데이터(`report_payload`), 레딧 기록과 일별·주별 계열(`reddit_history`) |
+| `notifications/` | FCM 푸시 알림(`fcm_notifier`), 상세 리포트 저장(`report_publisher`), 레딧 기록 파일(`history_store`) |
 | `docs/` | GitHub Pages: 토큰 발급 페이지(`index.html`), 리포트 페이지(`report.html`) |
 | `scheduler/` | 로컬 스케줄러 (`python scheduler/daily_task.py`) |
 | `tests/` | 단위 테스트 (`pip install -r requirements-dev.txt && pytest`) |
@@ -33,5 +34,6 @@ Firebase 설정, GitHub Actions Secret 등록, 자동화 방법은 [SETUP_GUIDE.
 ## 현재 상태
 
 구현됨: 가격·등락률, 시간외 변동, 거래량·52주 범위·이동평균·RSI·공매도·애널리스트 목표가·실적일, 경쟁사와 시장 지수 비교,
-뉴스 헤드라인, SEC 공시, 레딧 언급량, 이상 신호 알림, 리포트 페이지. 소스 하나가 실패해도 나머지 리포트는 나갑니다.
+뉴스 헤드라인, SEC 공시, 레딧 언급량과 추세 그래프(일별 3개월·주별 52주, 기록은 켜진 날부터 쌓임), 이상 신호 알림, 리포트 페이지.
+소스 하나가 실패해도 나머지 리포트는 나갑니다.
 미구현 (`main.py`의 TODO): CEO 활동 모니터링, 재무제표.

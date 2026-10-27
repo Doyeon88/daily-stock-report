@@ -105,6 +105,7 @@ def generate_report(
     filings: Optional[Dict[str, Dict]] = None,
     comparison: Optional[Dict] = None,
     reddit: Optional[Dict[str, Optional[Dict]]] = None,
+    reddit_history: Optional[Dict[str, Dict]] = None,
 ) -> Dict:
     """
     Generate a report dictionary from collected stock data
@@ -116,12 +117,14 @@ def generate_report(
         filings: ticker -> SEC filings (scrapers.sec_filings), optional
         comparison: competitor and market changes (scrapers.competitor_scraper), optional
         reddit: ticker -> Reddit mentions (scrapers.reddit_mentions), optional
+        reddit_history: ticker -> daily and weekly Reddit series (processors.reddit_history), optional
 
     Returns:
         dict: Report data compatible with notifications.fcm_notifier.send_report
               (and the underlying send_report_notification), containing 'title',
               'summary', 'insights', 'flags', 'timestamp' and 'stocks_count', plus the
-              optional data passed in ('details', 'news', 'filings', 'comparison', 'reddit')
+              optional data passed in ('details', 'news', 'filings', 'comparison', 'reddit',
+              'reddit_history')
     """
     # Timezone-aware: the GitHub Actions runner clock is UTC, not the configured TIMEZONE
     timestamp = datetime.now(pytz.timezone(TIMEZONE)).isoformat()
@@ -162,6 +165,7 @@ def generate_report(
         'filings': filings,
         'comparison': comparison or {},
         'reddit': reddit,
+        'reddit_history': reddit_history or {},
     }
 
     logger.info(f"Generated report: {summary}")

@@ -20,6 +20,8 @@ REPORT = {
     'filings': {}, 'comparison': {},
     'reddit': {'BE': {'rank': 32, 'mentions': 16, 'upvotes': 51, 'rank_24h_ago': 23, 'mentions_24h_ago': 10},
                'BWXT': None},
+    'reddit_history': {'BE': {'daily': [['2026-10-27', 32, 16, 51]], 'weekly': [['2026-10-26', 32.0, 16.0, 51.0, 1]],
+                              'first_date': '2026-10-27', 'days': 1}},
 }
 
 
@@ -67,6 +69,8 @@ def test_published_file_holds_the_full_report(configured, monkeypatch):
     assert payload['details'] == {'BE': {'rsi14': 23.0}}
     assert payload['reddit']['BE']['rank'] == 32
     assert payload['reddit']['BWXT'] is None                      # "not ranked" must survive as null, not vanish
+    assert payload['reddit_history']['BE']['daily'] == [['2026-10-27', 32, 16, 51]]
+    assert payload['reddit_history']['BE']['weekly'][0][4] == 1   # the page plots both series from this file
 
 
 def test_nothing_is_published_without_credentials(monkeypatch):

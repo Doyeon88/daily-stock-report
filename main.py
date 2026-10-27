@@ -66,7 +66,7 @@ def main():
             competitor_scraper, news_scraper, reddit_mentions, sec_filings, stock_details,
             yfinance_scraper
         )
-        from processors import report_generator
+        from processors import reddit_history, report_generator
         from notifications import fcm_notifier, report_publisher
 
         logger.info("Step 1: Collecting stock data...")
@@ -97,6 +97,11 @@ def main():
             "Reddit mentions", lambda: reddit_mentions.fetch_reddit_mentions(STOCKS_TO_TRACK), {}
         )
         logger.info(f"- {sum(1 for mentions in reddit.values() if mentions)}/{len(STOCKS_TO_TRACK)} ticker(s) ranked")
+        # Today's snapshot goes into the stored history; the report plots the daily and weekly series from it
+        reddit_trend = _collect_optional(
+            "Reddit history", lambda: reddit_history.update_history(reddit), {}
+        )
+        logger.info(f"- History for {len(reddit_trend)} ticker(s)")
 
         logger.info("Step 6: Comparing with competitors and the market...")
         comparison = _collect_optional(
@@ -107,7 +112,9 @@ def main():
         # CEO social media monitoring is not implemented
 
         logger.info("Step 7: Generating report...")
-        report = report_generator.generate_report(stock_data, details, news, filings, comparison, reddit)
+        report = report_generator.generate_report(
+            stock_data, details, news, filings, comparison, reddit, reddit_trend
+        )
         logger.info(f"[OK] Report generated ({len(report['flags'])} signal(s))")
 
         logger.info("Step 8: Sending push notification...")

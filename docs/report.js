@@ -168,6 +168,140 @@ function formatNews(article) {
   };
 }
 
+// ---------- 레딧 추세 그래프 (외부 라이브러리 없이 그리는 SVG) ----------
+// 그래프에 들어가는 것은 숫자와 'YYYY-MM-DD' 날짜뿐이라, 만든 문자열을 innerHTML 로 넣어도 HTML 이 끼어들 수 없습니다.
+
+const CHART = { width: 300, height: 84, left: 4, right: 4, top: 10, bottom: 16 };
+const DAY_MS = 86400000;
+
+function dayNumber(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / DAY_MS : null;
+}
+
+const finiteOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+const oneDecimal = (v) => String(Math.round(v * 10) / 10);
+
+// points: [{ day: 'YYYY-MM-DD', value: 숫자 또는 null }] (오래된 것부터). null 인 날은 선이 끊깁니다.
+// options: invert(순위처럼 작을수록 좋은 값은 위로), zeroBase(개수는 0부터), format(축 숫자 서식), label(접근성 설명)
+function buildChartSvg(points, options) {
+  const o = options || {};
+  const valid = points.map((p) => ({ x: dayNumber(p.day), y: finiteOrNull(p.value), day: String(p.day) })).filter((p) => p.x !== null);
+  const known = valid.filter((p) => p.y !== null);
+  if (!known.length) return '';
+
+  const { width, height, left, right, top, bottom } = CHART;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const minX = Math.min(...valid.map((p) => p.x));
+  const maxX = Math.max(...valid.map((p) => p.x));
+  const dataMin = Math.min(...known.map((p) => p.y));
+  const dataMax = Math.max(...known.map((p) => p.y));
+  let minY = o.zeroBase ? 0 : dataMin;
+  let maxY = dataMax;
+  if (maxY === minY) {          // 값이 하나뿐이거나 계속 같으면 선이 가운데에 오게 여백을 준다
+    if (o.zeroBase) maxY = minY + 1; else { minY -= 1; maxY += 1; }
+  }
+
+  const px = (x) => left + (maxX === minX ? plotW / 2 : ((x - minX) / (maxX - minX)) * plotW);
+  const py = (y) => top + plotH * (o.invert ? (y - minY) / (maxY - minY) : 1 - (y - minY) / (maxY - minY));
+  const f1 = (n) => n.toFixed(1);
+  const format = o.format || oneDecimal;
+
+  const segments = [];
+  let current = [];
+  for (const p of valid) {
+    if (p.y === null) { if (current.length) segments.push(current); current = []; } else current.push(p);
+  }
+  if (current.length) segments.push(current);
+
+  const paths = segments.filter((s) => s.length > 1)
+    .map((s) => '<path d="M' + s.map((p) => f1(px(p.x)) + ' ' + f1(py(p.y))).join(' L') + '" />').join('');
+  const isolated = segments.filter((s) => s.length === 1).map((s) => s[0]);
+  const dotted = known.length <= 45 ? known : isolated;       // 점이 많으면 선만 그리고, 끊긴 외톨이 점만 찍는다
+  const dots = dotted.map((p) => '<circle cx="' + f1(px(p.x)) + '" cy="' + f1(py(p.y)) + '" r="1.8" />').join('');
+  const last = known[known.length - 1];
+  const lastDot = '<circle cx="' + f1(px(last.x)) + '" cy="' + f1(py(last.y)) + '" r="3" />';
+
+  const topValue = o.invert ? dataMin : dataMax;
+  const bottomValue = o.zeroBase ? 0 : (o.invert ? dataMax : dataMin);
+  const first = valid[0];
+  const lastDay = valid[valid.length - 1];
+  const dateText = (p) => (o.withYear ? p.day.slice(2) : p.day.slice(5));
+  const text = (x, y, anchor, value) => '<text x="' + x + '" y="' + y + '" text-anchor="' + anchor + '">' + value + '</text>';
+
+  return '<svg class="chart" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="' + (o.label || '추세 그래프') + '">'
+    + '<line class="grid" x1="' + left + '" x2="' + (width - right) + '" y1="' + top + '" y2="' + top + '" />'
+    + '<line class="grid" x1="' + left + '" x2="' + (width - right) + '" y1="' + (height - bottom) + '" y2="' + (height - bottom) + '" />'
+    + paths + dots + lastDot
+    + text(left + 2, top - 2, 'start', format(topValue))
+    + text(left + 2, height - bottom - 3, 'start', format(bottomValue))
+    + text(left, height - 3, 'start', dateText(first))
+    + text(width - right, height - 3, 'end', dateText(lastDay))
+    + '</svg>';
+}
+
+// mode: 'daily'(최근 3개월 일별) 또는 'weekly'(최근 52주 주별 평균). history: {daily, weekly, first_date, days}
+function trendHtml(history, mode) {
+  const weekly = mode === 'weekly';
+  const rows = (weekly ? history.weekly : history.daily) || [];
+  if (!rows.length) return '<p class="empty">이 기간의 기록이 없습니다.</p>';
+
+  const started = dayNumber(history.first_date) === null ? '' : ' · ' + history.first_date + '부터';
+  const note = '기록 ' + (finiteOrNull(history.days) || rows.length) + '일' + started;
+  const neverRanked = rows.every((r) => finiteOrNull(r[1]) === null && !finiteOrNull(r[2]) && !finiteOrNull(r[3]));
+  if (neverRanked) return '<p class="empty">이 기간 레딧 언급 없음 (' + note + ')</p>';
+
+  const average = weekly ? ' (주 평균)' : '';
+  const charts = [
+    { title: '순위', index: 1, invert: true, format: (v) => Math.round(v) + '위', label: '레딧 언급 순위 추세',
+      latest: (v) => (v === null ? '순위 없음' : Math.round(v) + '위'), none: '이 기간 순위 없음' },
+    { title: '언급 수' + average, index: 2, zeroBase: true, label: '레딧 언급 수 추세', latest: oneDecimal },
+    { title: '업보트' + average, index: 3, zeroBase: true, label: '레딧 업보트 추세', latest: oneDecimal },
+  ];
+
+  let html = '<div class="trend-note">' + note + (rows.length < 2 ? ' · 기록이 2개 이상 쌓이면 선이 그려집니다' : '') + '</div>';
+  for (const chart of charts) {
+    const points = rows.map((r) => ({ day: r[0], value: r[chart.index] }));
+    const values = points.map((p) => finiteOrNull(p.value));
+    const lastKnown = values.filter((v) => v !== null).pop();
+    const svg = buildChartSvg(points, { invert: chart.invert, zeroBase: chart.zeroBase, format: chart.format, label: chart.label, withYear: weekly });
+    html += '<div class="chart-title"><span>' + chart.title + '</span><b>' + chart.latest(lastKnown === undefined ? null : lastKnown) + '</b></div>'
+      + (svg || '<p class="empty">' + chart.none + '</p>');
+  }
+  return html;
+}
+
+function renderTrend(doc, history) {
+  const box = doc.createElement('div');
+  box.className = 'trend';
+  const heading = doc.createElement('h3');
+  heading.textContent = '레딧 추세 (ApeWisdom)';
+  box.appendChild(heading);
+
+  const tabs = doc.createElement('div');
+  tabs.className = 'tabs';
+  const area = doc.createElement('div');
+  area.className = 'trend-area';
+  const buttons = {};
+  const show = (mode) => {
+    area.innerHTML = trendHtml(history, mode);
+    for (const key of Object.keys(buttons)) buttons[key].className = key === mode ? 'on' : '';
+  };
+  for (const [mode, label] of [['daily', '일별 3개월'], ['weekly', '주별 52주']]) {
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.addEventListener('click', () => show(mode));
+    buttons[mode] = button;
+    tabs.appendChild(button);
+  }
+  box.appendChild(tabs);
+  box.appendChild(area);
+  show('daily');
+  return box;
+}
+
 // ---------- 화면 만들기 (값은 모두 textContent 로 넣어 HTML 이 끼어들 수 없게 합니다) ----------
 
 function renderReport(doc, data) {
@@ -237,12 +371,14 @@ function renderReport(doc, data) {
   const filings = data.filings || {};
   const peers = (data.comparison && data.comparison.peers) || {};
   const reddit = data.reddit || {};
+  const redditHistory = data.reddit_history || {};
   for (const row of data.s) {
     const ticker = String(row[0]);
     const lines = formatDetailLines(details[ticker], peers[ticker], reddit[ticker]);
     const filingInfo = filings[ticker] || { filings: [], form4_count: 0 };
     const articles = news[ticker] || [];
-    if (!lines.length && !filingInfo.filings.length && !filingInfo.form4_count && !articles.length) continue;
+    const trend = redditHistory[ticker];
+    if (!lines.length && !filingInfo.filings.length && !filingInfo.form4_count && !articles.length && !trend) continue;
 
     const card = element('section', 'card');
     card.appendChild(element('h2', '', ticker));
@@ -253,6 +389,8 @@ function renderReport(doc, data) {
       list.appendChild(element('dd', line.tone, line.text));
     }
     if (lines.length) card.appendChild(list);
+
+    if (trend) card.appendChild(renderTrend(doc, trend));
 
     if (filingInfo.filings.length || filingInfo.form4_count) {
       // Yahoo가 대신 준 목록은 임원 거래(Form 4)가 없고 8-K 항목 설명도 없다
@@ -294,5 +432,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
     formatFiling, formatNews, formatNewsTime, renderReport, DATA_URL_PREFIX,
+    buildChartSvg, trendHtml, renderTrend,
   };
 }

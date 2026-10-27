@@ -1,0 +1,34 @@
+name: Reddit Snapshot
+
+on:
+  schedule:
+    # 매일 09:20 KST (= 00:20 UTC), 주말 포함. 리포트(화~토 09:00 KST)가 없는 일·월에도 기록이 비지 않게 한다.
+    # 리포트가 그날 이미 기록했으면 아무것도 하지 않는다(요청도 커밋도 없음).
+    - cron: '20 0 * * *'
+  workflow_dispatch:  # 수동 실행 버튼
+
+# 기록 파일(history/reddit.json)을 report-data 브랜치에 커밋하려고 쓰기 권한이 필요하다
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        # 이 작업에 필요한 것만, 버전은 requirements.txt에서 그대로 가져온다
+        run: pip install $(grep -E '^(requests|pytz|python-dotenv)==' requirements.txt)
+
+      - name: Record the Reddit snapshot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python reddit_snapshot.py
