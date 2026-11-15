@@ -3,7 +3,8 @@
 // 데이터는 두 곳에서 옵니다 (notifications/fcm_notifier.py 의 _build_report_link):
 //  - 주소의 # 뒤: 핵심 표와 신호만 담은 base64url JSON  {"v":1, "t", "s":[[ticker, price, prev, change, pct, volume, error]], "g":[신호...]}
 //  - 주소의 ?d=<URL>: 상세 데이터(v2)를 저장해 둔 JSON 파일. 불러오지 못하면 # 뒤의 핵심 표로 대신합니다.
-//    v2 = v1 + {"details", "news", "filings", "comparison"}
+//    v2 = v1 + {"details", "news", "filings", "comparison", "tags", "analyst", "institutional",
+//              "policy", "calendar", "valuation", "portfolio", "checklist"}
 
 // ?d= 로 받을 수 있는 주소는 이 저장소의 raw 파일로 제한합니다 (누가 만든 링크로 다른 곳의 데이터를 띄우지 못하게)
 const DATA_URL_PREFIX = 'https://raw.githubusercontent.com/Doyeon88/daily-stock-report/';
@@ -135,11 +136,69 @@ function formatDetailLines(details, peers) {
   return lines;
 }
 
+const TAGS = { '호재': 'up', '악재': 'down', '중립': '' };
+const tagTone = (tag) => TAGS[tag] || '';
+const verifiedMark = (verified) => (verified ? '✔검증' : '?미검증');
+
 function formatFiling(filing) {
   return {
     text: filing.form + ' ' + String(filing.date).slice(5) + (filing.label ? ' · ' + filing.label : ''),
     url: safeUrl(filing.url),
+    tag: filing.tag || '',
+    verified: filing.verified === true,
   };
+}
+
+// 시나리오 EPS 밸류에이션 줄: "2027 EPS $0.65 · 현재가 기준 P/E 53.8배 · 20x $13 / 30x $19.5"
+function formatValuation(valuation) {
+  return ((valuation && valuation.rows) || []).map((r) => ({
+    label: r.year + ' EPS',
+    text: money(r.eps) + ' · 현재가 기준 P/E ' + Number(r.forward_pe).toFixed(1) + '배 · '
+      + Object.keys(r.targets).map((m) => m + 'x ' + money(r.targets[m])).join(' / '),
+  }));
+}
+
+function formatAnalyst(entry) {
+  const lines = [];
+  for (const r of (entry && entry.ratings) || []) {
+    const grade = r.from_grade && r.to_grade ? r.from_grade + ' → ' + r.to_grade : r.to_grade || r.action;
+    const target = has(r.target) ? ' · 목표가 ' + (has(r.prior_target) ? money(r.prior_target) + ' → ' : '') + money(r.target) : '';
+    lines.push(String(r.date).slice(5) + ' ' + r.firm + ' ' + grade + target);
+  }
+  for (const e of (entry && entry.eps_trend) || []) {
+    const parts = [has(e.change_7d_pct) ? '7일 ' + signed(e.change_7d_pct) : null,
+      has(e.change_30d_pct) ? '30일 ' + signed(e.change_30d_pct) : null].filter(Boolean);
+    lines.push('EPS 컨센 ' + e.label + ' ' + money(e.current) + (parts.length ? ' (' + parts.join(' · ') + ')' : ''));
+  }
+  return lines;
+}
+
+function formatHolder(h) {
+  return h.holder + ' ' + Number(h.shares).toLocaleString('en-US') + '주'
+    + (has(h.pct_held) ? ' (' + Number(h.pct_held).toFixed(2) + '%)' : '')
+    + (has(h.pct_change) ? ' · 직전 대비 ' + signed(h.pct_change) : '')
+    + (h.reported ? ' · ' + h.reported : '');
+}
+
+function formatCalendarItem(item) {
+  const dday = item.dday === 0 ? 'D-DAY' : 'D-' + item.dday;
+  return {
+    text: dday + ' ' + String(item.date).slice(5) + ' ' + item.label
+      + (item.tickers && item.tickers.length ? ' [' + item.tickers.join(', ') + ']' : ''),
+    verified: item.verified === true,
+  };
+}
+
+// 포트폴리오: 금액이 있으면 금액도, 없으면 수익률·비중만
+function formatPortfolio(p) {
+  if (!p) return [];
+  const lines = (p.positions || []).map((x) =>
+    x.symbol + ' ' + (has(x.pnl_pct) ? signed(x.pnl_pct, 2) : '-') + (has(x.weight_pct) ? ' · 비중 ' + Number(x.weight_pct).toFixed(1) + '%' : '')
+    + (has(x.pnl) ? ' · 평가손익 ' + (x.pnl >= 0 ? '+' : '') + '$' + Number(x.pnl).toFixed(0) : ''));
+  const total = [has(p.total_pnl_pct) ? '누적 ' + signed(p.total_pnl_pct, 2) : null,
+    has(p.day_pnl_pct) ? '오늘 ' + signed(p.day_pnl_pct, 2) : null].filter(Boolean).join(' · ');
+  if (total) lines.unshift('합계 ' + total);
+  return lines;
 }
 
 // 뉴스 시각은 브라우저 시간대와 무관하게 한국 시간(KST)으로 표시합니다.
@@ -195,6 +254,33 @@ function renderReport(doc, data) {
     for (const flag of flags) doc.getElementById('flag-list').appendChild(element('li', '', String(flag)));
   }
 
+  // 캘린더(D-day) · 포트폴리오 · 정책 (해당 영역이 페이지에 있을 때만)
+  const fill = (id, listId, entries) => {
+    const box = doc.getElementById(id);
+    if (!box || !entries.length) return;
+    box.hidden = false;
+    const ul = doc.getElementById(listId);
+    for (const e of entries) {
+      const li = element('li', e.tone || '');
+      if (e.url) li.appendChild(link(e.text, e.url)); else li.textContent = e.text;
+      if (e.meta) li.appendChild(element('div', 'meta', e.meta));
+      ul.appendChild(li);
+    }
+  };
+  fill('calendar', 'calendar-list', (data.calendar || []).map((c) => {
+    const f = formatCalendarItem(c);
+    return { text: f.text, meta: verifiedMark(f.verified) };
+  }));
+  fill('portfolio', 'portfolio-list', formatPortfolio(data.portfolio).map((text) => ({ text })));
+  const policyEntries = [];
+  for (const group of data.policy || []) {
+    for (const a of group.articles || []) {
+      const n = formatNews(a);
+      policyEntries.push({ text: n.title, url: n.url, meta: group.query + ' · ' + n.meta + ' · ?미검증' });
+    }
+  }
+  fill('policy', 'policy-list', policyEntries);
+
   // 가격 표
   const body = doc.getElementById('rows');
   for (const row of data.s) {
@@ -227,12 +313,20 @@ function renderReport(doc, data) {
   for (const row of data.s) {
     const ticker = String(row[0]);
     const lines = formatDetailLines(details[ticker], peers[ticker]);
+    const valuationLines = formatValuation((data.valuation || {})[ticker]);
+    const analystLines = formatAnalyst((data.analyst || {})[ticker]);
+    const holders = ((data.institutional || {})[ticker] || {}).holders || [];
+    const check = (data.checklist || {})[ticker];
     const filingInfo = filings[ticker] || { filings: [], form4_count: 0 };
     const articles = news[ticker] || [];
-    if (!lines.length && !filingInfo.filings.length && !filingInfo.form4_count && !articles.length) continue;
+    if (!lines.length && !filingInfo.filings.length && !filingInfo.form4_count && !articles.length
+      && !valuationLines.length && !analystLines.length && !holders.length && !check) continue;
 
     const card = element('section', 'card');
-    card.appendChild(element('h2', '', ticker));
+    const heading = element('h2', '', ticker);
+    const overall = (data.tags || {})[ticker];
+    if (overall) heading.appendChild(element('span', 'tag ' + tagTone(overall), overall));
+    card.appendChild(heading);
 
     const list = element('dl', 'lines');
     for (const line of lines) {
@@ -241,6 +335,27 @@ function renderReport(doc, data) {
     }
     if (lines.length) card.appendChild(list);
 
+    const addList = (title, entries) => {
+      if (!entries.length) return;
+      card.appendChild(element('h3', '', title));
+      const ul = element('ul', 'items');
+      for (const text of entries) ul.appendChild(element('li', '', text));
+      card.appendChild(ul);
+    };
+    if (valuationLines.length) {
+      const note = ((data.valuation || {})[ticker] || {}).note;
+      addList('시나리오 EPS 밸류에이션 (제 추정' + (note ? ' · ' + note : '') + ')',
+        valuationLines.map((v) => v.label + ' ' + v.text));
+    }
+    addList('애널리스트·컨센서스 변화 (Yahoo 집계)', analystLines);
+    addList('13F 기관 보유 (지연·롱온리·패시브 포함, 원문 확인 필요)', holders.map(formatHolder));
+    if (check) {
+      addList('다음 이벤트 체크리스트', [
+        ...(check.next_event ? ['다음: ' + formatCalendarItem(check.next_event).text] : []),
+        ...(check.items || []),
+      ]);
+    }
+
     if (filingInfo.filings.length || filingInfo.form4_count) {
       // Yahoo가 대신 준 목록은 임원 거래(Form 4)가 없고 8-K 항목 설명도 없다
       card.appendChild(element('h3', '', 'SEC 공시 (최근 7일)' + (filingInfo.source === 'yahoo' ? ' · Yahoo Finance 제공' : '')));
@@ -248,7 +363,9 @@ function renderReport(doc, data) {
       for (const filing of filingInfo.filings) {
         const f = formatFiling(filing);
         const li = element('li');
+        if (f.tag) li.appendChild(element('span', 'tag ' + tagTone(f.tag), f.tag));
         li.appendChild(link(f.text, f.url));
+        li.appendChild(element('span', 'meta', ' ' + verifiedMark(f.verified)));
         ul.appendChild(li);
       }
       if (filingInfo.form4_count) ul.appendChild(element('li', '', '임원·대주주 거래(Form 4) ' + filingInfo.form4_count + '건'));
@@ -261,8 +378,9 @@ function renderReport(doc, data) {
       for (const article of articles) {
         const n = formatNews(article);
         const li = element('li');
+        if (article.tag) li.appendChild(element('span', 'tag ' + tagTone(article.tag), article.tag));
         li.appendChild(link(n.title, n.url));
-        if (n.meta) li.appendChild(element('div', 'meta', n.meta));
+        if (n.meta) li.appendChild(element('div', 'meta', n.meta + ' · ' + verifiedMark(article.verified === true)));
         ul.appendChild(li);
       }
       card.appendChild(ul);
@@ -281,5 +399,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
     formatFiling, formatNews, formatNewsTime, renderReport, DATA_URL_PREFIX,
+    formatValuation, formatAnalyst, formatHolder, formatCalendarItem, formatPortfolio, classTag: tagTone,
   };
 }

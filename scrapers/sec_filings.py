@@ -26,9 +26,14 @@ logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 20
 REFUSAL_TEXT_LENGTH = 200
-FORMS_OF_INTEREST = ('8-K', '10-Q', '10-K')
+FORMS_OF_INTEREST = (
+    '8-K', '10-Q', '10-K',
+    'S-1', 'S-1/A', '424B4',                                   # IPO·유상증자 서류
+    'SCHEDULE 13D', 'SCHEDULE 13D/A', 'SCHEDULE 13G', 'SCHEDULE 13G/A',  # 5% 이상 보유(2025년부터의 EDGAR 양식명)
+    'SC 13D', 'SC 13D/A', 'SC 13G', 'SC 13G/A',                # 이전 양식명
+)
 INSIDER_FORMS = ('4', '4/A')
-MAX_FILINGS_PER_TICKER = 5
+MAX_FILINGS_PER_TICKER = 8
 
 # Common 8-K item codes -> short Korean label (9.01 is just "exhibits", so it is skipped)
 ITEM_LABELS = {

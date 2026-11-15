@@ -46,10 +46,15 @@ def _finnhub_news(ticker: str, now: datetime) -> List[Dict]:
 
 def _google_news(ticker: str, now: datetime) -> List[Dict]:
     name = STOCK_NAMES.get(ticker, ticker)
+    return google_news_query(f'"{name}" stock', now)
+
+
+def google_news_query(query: str, now: datetime, lookback_days: int = NEWS_LOOKBACK_DAYS) -> List[Dict]:
+    """Google News RSS articles for any search query (also used for policy tracking)"""
     response = requests.get(
         'https://news.google.com/rss/search',
         params={
-            'q': f'"{name}" stock when:{NEWS_LOOKBACK_DAYS}d',
+            'q': f'{query} when:{lookback_days}d',
             'hl': 'en-US', 'gl': 'US', 'ceid': 'US:en',
         },
         timeout=REQUEST_TIMEOUT,
@@ -71,9 +76,9 @@ def _google_news(ticker: str, now: datetime) -> List[Dict]:
     return articles
 
 
-def _merge(articles: List[Dict], now: datetime) -> List[Dict]:
+def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBACK_DAYS) -> List[Dict]:
     """Keep recent articles, drop duplicate titles (keeping the first seen), newest first, capped"""
-    cutoff = now - timedelta(days=NEWS_LOOKBACK_DAYS)
+    cutoff = now - timedelta(days=lookback_days)
     seen, merged = set(), []
     for article in sorted(
         (a for a in articles if a['published'] >= cutoff), key=lambda a: a['published'], reverse=True

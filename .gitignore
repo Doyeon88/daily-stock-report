@@ -62,3 +62,5 @@ Thumbs.db
 *.key
 *.pem
 config.local.py
+# Personal portfolio (never commit)
+portfolio.json

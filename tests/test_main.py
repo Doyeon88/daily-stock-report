@@ -10,7 +10,8 @@ import pytest
 import main
 from notifications import fcm_notifier, report_publisher
 from scrapers import (
-    competitor_scraper, news_scraper, sec_filings, stock_details, yfinance_scraper
+    analyst_changes, competitor_scraper, institutional, news_scraper, policy_tracker,
+    sec_filings, stock_details, yfinance_scraper
 )
 
 OPTIONAL_COLLECTORS = (
@@ -18,6 +19,9 @@ OPTIONAL_COLLECTORS = (
     (news_scraper, 'fetch_news', {}),
     (sec_filings, 'fetch_sec_filings', {}),
     (competitor_scraper, 'compare_stocks', {'peers': {}, 'market': []}),
+    (analyst_changes, 'fetch_analyst_changes', {}),
+    (institutional, 'fetch_institutional', {}),
+    (policy_tracker, 'fetch_policy_news', []),
 )
 
 
@@ -113,6 +117,7 @@ def test_collected_extras_reach_the_report_and_the_published_link(monkeypatch):
     main.main()
 
     report = send_report.call_args[0][0]
-    assert report['news'] == {'A': [{'title': 'Headline'}]}
+    assert report['news'] == {'A': [{'title': 'Headline', 'tag': '중립', 'verified': False}]}
+    assert report['tags'] == {'A': '중립'}
     assert 'A RSI 25 과매도' in report['flags']
     assert report['data_url'] == 'https://raw.example/report.json'

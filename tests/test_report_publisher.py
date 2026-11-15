@@ -90,3 +90,13 @@ def test_failures_give_none_so_the_link_falls_back_to_the_core_table(configured,
     monkeypatch.setattr(report_publisher.requests, 'put', put)
 
     assert report_publisher.publish_report(REPORT) is None
+
+
+def test_published_payload_has_no_portfolio_amounts():
+    import json
+    from processors.report_payload import build_full_payload
+    report = {'portfolio': {'positions': [{'symbol': 'A', 'shares': 999, 'value': 12345.0}], 'total_value': 12345.0},
+              'portfolio_public': {'positions': [{'symbol': 'A', 'pnl_pct': 5.0, 'weight_pct': 100.0}],
+                                   'total_pnl_pct': 5.0, 'day_pnl_pct': 1.0}}
+    dumped = json.dumps(build_full_payload(report))
+    assert '999' not in dumped and '12345' not in dumped and '"pnl_pct": 5.0' in dumped

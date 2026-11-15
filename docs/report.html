@@ -30,6 +30,10 @@
     ul.items li { margin-bottom: .35rem; }
     ul.items a { color: inherit; }
     .meta { color: var(--muted); font-size: .75rem; }
+    .tag { font-size: .7rem; border: 1px solid currentColor; border-radius: .8rem; padding: 0 .4rem; margin-right: .35rem; font-weight: 600; }
+    h2 .tag { margin-left: .5rem; vertical-align: middle; }
+    .box { border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .9rem; margin-bottom: 1rem; }
+    .box ul { margin: 0; padding-left: 1.1rem; font-size: .9rem; }
     .hint { color: var(--muted); font-size: .8rem; margin-top: 1rem; }
     /* 폰 화면: 글자와 여백을 줄여 5열이 한 화면에 들어오게 한다 */
     @media (max-width: 520px) {
@@ -52,15 +56,18 @@
     <h2>오늘의 신호</h2>
     <ul id="flag-list"></ul>
   </section>
+  <section id="calendar" class="box" hidden><h2>이벤트 캘린더</h2><ul id="calendar-list"></ul></section>
+  <section id="portfolio" class="box" hidden><h2>내 포트폴리오</h2><ul id="portfolio-list"></ul></section>
   <table>
     <thead>
       <tr><th>종목</th><th>현재가</th><th class="chg">전일 대비</th><th>등락률</th><th>거래량</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
+  <section id="policy" class="box" hidden><h2>정책·규제</h2><ul id="policy-list"></ul></section>
   <div id="notice"></div>
   <div id="cards"></div>
-  <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다. 뉴스·공시는 참고용이며 투자 권유가 아닙니다.</p>
+  <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다. 호재/중립/악재 태그는 키워드 자동 분류(참고용), ✔검증은 공시·거래소 데이터, ?미검증은 언론 헤드라인·수동 입력입니다. 투자 권유가 아닙니다.</p>
   <script src="./report.js"></script>
 </body>
 </html>

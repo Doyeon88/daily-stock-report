@@ -1,0 +1,8 @@
+{
+  "_comment": "이 파일을 portfolio.json으로 복사해서 수정하세요. portfolio.json은 .gitignore 대상이라 커밋되지 않습니다. GitHub Actions에서는 PORTFOLIO_JSON Secret에 같은 내용을 넣으세요.",
+  "holdings": [
+    {"symbol": "BE",   "shares": 10, "avg_cost": 100.0},
+    {"symbol": "EROC", "shares": 100, "avg_cost": 20.0}
+  ],
+  "cash": 0
+}

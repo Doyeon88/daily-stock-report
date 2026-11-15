@@ -3,7 +3,7 @@
 관심 종목의 전일 종가와 등락률, 오늘의 이상 신호를 매일 아침 모바일 푸시 알림(Firebase Cloud Messaging)으로 보내줍니다.
 알림을 탭하면 시장 지수, 종목별 상세 지표, 뉴스, SEC 공시가 담긴 리포트 페이지가 열립니다.
 
-- 추적 종목: `config.py`의 `STOCKS_TO_TRACK` (현재 BE, BWXT, CRCL, SECZ)
+- 추적 종목·실행 시각·이벤트: `watchlist.json` 한 곳에서 수정 (현재 BE, EROC, INNIO, CAT, FPS, NBIS, CRCL, BWXT, 매일 07:00 KST·화~토)
 - 데이터: yfinance(가격·지표), Google News RSS와 Finnhub(뉴스), SEC EDGAR 또는 Yahoo Finance(공시)
 - 알림: Firebase Cloud Messaging, 리포트 페이지: GitHub Pages(`docs/`)
 - 실행: GitHub Actions 스케줄(권장), 또는 로컬 cron / 작업 스케줄러
@@ -18,16 +18,41 @@ python main.py
 
 Firebase 설정, GitHub Actions Secret 등록, 자동화 방법은 [SETUP_GUIDE.md](SETUP_GUIDE.md)를 참고하세요.
 
+## 설정 바꾸기
+
+| 하고 싶은 것 | 방법 |
+|---|---|
+| 종목 추가·삭제, 경쟁사, 회사명 | `watchlist.json`의 `tickers` (티커가 비슷한 회사에 주의: EROC ≠ EROK ≠ ERO) |
+| 실행 시각·요일 (KST) | `watchlist.json`의 `report_time`, `report_days` 수정 → `python scripts/sync_schedule.py` → 커밋·푸시 (워크플로 cron이 UTC로 자동 변환됨. GitHub cron은 몇 분 늦을 수 있음) |
+| 시나리오 EPS 대비 밸류에이션 | 종목에 `scenario_eps`(`{"2027": 0.65, ...}`)와 최상위 `valuation_multiples` |
+| 이벤트 캘린더(D-day), 종목별 체크리스트 | `events`, `checklist`. 출처가 불확실한 일정은 `"verified": false`로 두면 '?미검증'으로 표시 |
+| 정책·규제 검색어 | `policy_queries` |
+| 내 포트폴리오 | `portfolio.example.json`을 `portfolio.json`으로 복사해 수정 (git 제외). GitHub Actions에서는 `PORTFOLIO_JSON` Secret에 같은 JSON |
+
+**포트폴리오 공개 범위:** 이 저장소는 공개라서 리포트 JSON(`report-data` 브랜치)도 공개됩니다. 기본값은 종목별 수익률(%)·비중(%)만 올리고 수량·평단·금액은 올리지 않습니다. 비중과 수익률만으로도 보유 사실은 드러나므로, 숨기고 싶으면 저장소를 비공개로 바꾸거나 `PORTFOLIO_JSON` Secret을 만들지 마세요.
+
+## 리포트 구성
+
+시장 요약(지수) · 종목 카드(가격·지표, **호재/중립/악재** 태그, ✔검증/?미검증 표시) · 공시 감시(8-K, 10-Q/10-K, S-1, Form 4 건수, 13D/G) ·
+애널리스트 투자의견·목표가 변경과 EPS 컨센서스 변화 · 13F 기관 보유(제출 기한 전후 시즌에만) · 정책·규제 뉴스 ·
+이벤트 캘린더(D-day) · 시나리오 EPS 대비 밸류에이션 · 포트폴리오 · 다음 이벤트 체크리스트.
+
+- 태그는 키워드 자동 분류라서 참고용입니다. ✔검증은 공시·거래소(Yahoo) 데이터, ?미검증은 언론 헤드라인과 직접 입력한 일정입니다.
+- 13F는 분기 말 기준의 지연 데이터이고 롱 포지션만 나오며 인덱스·패시브 자금이 섞입니다. 특정 기관의 신규 보유 여부는 SEC 원문(13F-HR, Schedule 13G/13D)으로 확인하세요.
+- 커뮤니티 글·AI 요약은 수집하지 않습니다.
+
 ## 구조
 
 | 경로 | 역할 |
 |---|---|
 | `main.py` | 수집 → 리포트 생성 → 알림 전송. 가격 수집 전부 실패나 알림 미전달 시 종료 코드 1 |
-| `scrapers/` | 데이터 수집: `yfinance_scraper`(가격), `stock_details`(지표), `news_scraper`, `sec_filings`, `competitor_scraper` |
-| `processors/` | 리포트 생성과 신호 계산(`report_generator`), 페이지용 데이터(`report_payload`) |
+| `scrapers/` | 데이터 수집: `yfinance_scraper`(가격), `stock_details`(지표), `news_scraper`, `sec_filings`, `competitor_scraper`, `analyst_changes`, `institutional`(13F), `policy_tracker` |
+| `processors/` | 리포트 생성과 신호 계산(`report_generator`), 페이지용 데이터(`report_payload`), `tagging`, `valuation`, `portfolio`, `calendar_events` |
 | `notifications/` | FCM 푸시 알림(`fcm_notifier`), 상세 리포트 저장(`report_publisher`) |
 | `docs/` | GitHub Pages: 토큰 발급 페이지(`index.html`), 리포트 페이지(`report.html`) |
 | `scheduler/` | 로컬 스케줄러 (`python scheduler/daily_task.py`) |
+| `scripts/sync_schedule.py` | `watchlist.json`의 실행 시각을 GitHub Actions cron에 반영 |
+| `watchlist.json` / `portfolio.example.json` | 종목·시각·이벤트 설정 / 포트폴리오 양식 |
 | `tests/` | 단위 테스트 (`pip install -r requirements-dev.txt && pytest`) |
 
 ## 현재 상태

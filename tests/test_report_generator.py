@@ -116,7 +116,7 @@ def test_generate_report_carries_the_extra_data_and_flags():
     )
 
     assert report['flags'] == ['A RSI 25 과매도']
-    assert report['news'] == {'A': [{'title': 'x'}]}
+    assert report['news'] == {'A': [{'title': 'x', 'tag': '중립', 'verified': False}]}
     assert report['comparison'] == {'market': []}
 
 
@@ -125,3 +125,19 @@ def test_generate_report_without_extras_still_has_all_keys():
 
     assert report['flags'] == [] and report['details'] == {} and report['news'] == {}
     assert report['filings'] == {} and report['comparison'] == {}
+
+
+def test_extras_are_attached_and_overall_tag_combines_news_and_filings():
+    stock_data = {'A': {'ticker': 'A', 'price': 1.0, 'previous_close': 1.0, 'change': 0.0,
+                        'change_percent': 0.0, 'volume': 1, 'error': None}}
+    news = {'A': [{'title': 'A beats estimates, record order backlog'}, {'title': 'A faces lawsuit'}]}
+    filings = {'A': {'filings': [{'form': '8-K', 'date': '2026-11-10', 'label': '주요 계약 체결', 'url': 'u'}],
+                     'form4_count': 0, 'source': 'sec'}}
+
+    report = report_generator.generate_report(
+        stock_data, {}, news, filings, None, extras={'calendar': [{'label': 'x'}], 'policy': []})
+
+    assert report['tags'] == {'A': '호재'}
+    assert report['filings']['A']['filings'][0]['verified'] is True
+    assert report['filings']['A']['source'] == 'sec'
+    assert report['calendar'] == [{'label': 'x'}]

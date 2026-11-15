@@ -2,9 +2,8 @@ name: Daily Stock Report
 
 on:
   schedule:
-    # 화~토 오전 9시 KST (= 00:00 UTC): 미국장은 KST 새벽에 마감하므로
-    # 월~금 장 마감 결과가 다음날 아침(금요일 장은 토요일 아침)에 도착한다
-    - cron: '0 0 * * 2-6'
+    # tue-sat 07:00 KST (scripts/sync_schedule.py가 watchlist.json에서 만든 값)
+    - cron: '0 22 * * 1,2,3,4,5'
   workflow_dispatch:  # 수동 실행 버튼
 
 # 쓰기 권한은 상세 리포트(JSON)를 report-data 브랜치에 커밋하려고 필요하다 (notifications/report_publisher.py).
@@ -41,4 +40,7 @@ jobs:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           # 상세 리포트 저장용. GITHUB_REPOSITORY는 Actions가 자동으로 채운다
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # (선택) 내 보유 종목 JSON(portfolio.example.json 형식). 저장소가 공개라서 파일이 아니라 Secret으로만 넣는다.
+          # 공개되는 리포트에는 수익률·비중(%)만 실리고 금액은 실리지 않는다(PORTFOLIO_PUBLISH_AMOUNTS=1일 때만 금액 포함)
+          PORTFOLIO_JSON: ${{ secrets.PORTFOLIO_JSON }}
         run: python main.py

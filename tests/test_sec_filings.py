@@ -11,11 +11,11 @@ from scrapers import sec_filings
 
 SUBMISSIONS = {
     'filings': {'recent': {
-        'form':            ['8-K',           '4',          '10-Q',       '8-K',        '4/A',        'S-1'],
+        'form':            ['8-K',           '4',          '10-Q',       '8-K',        '4/A',        'DEF 14A'],
         'filingDate':      ['2026-10-26',    '2026-10-26', '2026-10-20', '2026-10-10', '2026-10-25', '2026-10-25'],
         'accessionNumber': ['0001-26-000001', '0001-26-000002', '0001-26-000003', '0001-26-000004',
                             '0001-26-000005', '0001-26-000006'],
-        'primaryDocument': ['earnings.htm',  'form4.xml',  'q3.htm',     'old8k.htm',  'f4a.xml',    's1.htm'],
+        'primaryDocument': ['earnings.htm',  'form4.xml',  'q3.htm',     'old8k.htm',  'f4a.xml',    'proxy.htm'],
         'items':           ['2.02,9.01',     '',           '',           '5.02',       '',           ''],
     }},
 }
@@ -32,7 +32,7 @@ YAHOO_FILINGS = [
      'edgarUrl': 'https://finance.yahoo.com/sec-filing/BE/0001628280-26-066890_1664703'},
     {'date': date(2026, 10, 10), 'type': '8-K', 'title': 'Corporate Changes & Voting Matters',
      'edgarUrl': 'https://finance.yahoo.com/sec-filing/BE/old'},                    # too old
-    {'date': date(2026, 10, 25), 'type': 'SC 13G/A', 'title': 'Ownership',
+    {'date': date(2026, 10, 25), 'type': '144', 'title': 'Ownership',
      'edgarUrl': 'https://finance.yahoo.com/sec-filing/BE/13g'},                    # not a tracked form
     {'date': date(2026, 10, 24), 'type': '10-K', 'title': 'Annual', 'edgarUrl': None},  # nothing to link to
 ]
@@ -80,7 +80,7 @@ def test_parse_recent_filings_filters_by_form_and_date():
     assert [(f['form'], f['date'], f['label']) for f in result['filings']] == [
         ('8-K', '2026-10-26', '실적 발표'),
         ('10-Q', '2026-10-20', ''),
-    ]                                    # the 8-K from 10-10 is too old, the S-1 is not a tracked form
+    ]                                    # the 8-K from 10-10 is too old, the proxy statement is not a tracked form
     assert result['form4_count'] == 2    # '4' and '4/A'
     assert result['source'] == 'sec'
     assert result['filings'][0]['url'] == (
@@ -286,3 +286,15 @@ def test_other_errors_are_still_retried(monkeypatch, yahoo):
     sec_filings.fetch_sec_filings(['BE'], today=date(2026, 10, 27))
 
     assert get.call_count == 3                              # MAX_RETRIES: a network hiccup is worth another try
+
+
+def test_ipo_and_ownership_filings_are_tracked():
+    submissions = {'filings': {'recent': {
+        'form': ['S-1', 'SCHEDULE 13G', 'SCHEDULE 13D/A', 'DEF 14A'],
+        'filingDate': ['2026-11-10'] * 4,
+        'accessionNumber': ['0001-26-00000%d' % i for i in range(4)],
+        'primaryDocument': ['a.htm'] * 4,
+        'items': [''] * 4,
+    }}}
+    result = sec_filings.parse_recent_filings(submissions, 1, '2026-11-01')
+    assert [f['form'] for f in result['filings']] == ['S-1', 'SCHEDULE 13G', 'SCHEDULE 13D/A']

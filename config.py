@@ -33,44 +33,91 @@ FIREBASE_CREDENTIALS_PATH = os.getenv('FIREBASE_CREDENTIALS', 'serviceAccountKey
 FCM_DEVICE_TOKEN = os.getenv('FCM_DEVICE_TOKEN')
 
 # ============================================
-# Stock Configuration
+# Stock Configuration (watchlist.json에서 읽음)
 # ============================================
+import json
+
+WATCHLIST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'watchlist.json')
+PORTFOLIO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portfolio.json')
+
+_DEFAULT_WATCHLIST = {
+    'tickers': [
+        {'symbol': 'BE', 'name': 'Bloom Energy', 'competitors': ['FCEL', 'PLUG', 'HYLN']},
+        {'symbol': 'BWXT', 'name': 'BWX Technologies', 'competitors': ['RTX', 'LMT', 'NOC']},
+        {'symbol': 'CRCL', 'name': 'Circle Internet Group', 'competitors': ['COIN', 'PYPL']},
+    ],
+    'market_context': [
+        {'symbol': '^GSPC', 'name': 'S&P 500'},
+        {'symbol': '^IXIC', 'name': 'Nasdaq'},
+        {'symbol': 'BTC-USD', 'name': 'Bitcoin'},
+    ],
+}
+
+
+def _load_json(path):
+    """JSON file content, or None if the file is missing or not valid JSON"""
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def load_watchlist(path=None):
+    """watchlist.json, or the built-in default when it is missing/broken/has no tickers"""
+    data = _load_json(path or WATCHLIST_FILE)
+    if not isinstance(data, dict) or not data.get('tickers'):
+        return dict(_DEFAULT_WATCHLIST)
+    return data
+
+
+def load_portfolio(path=None):
+    """
+    Personal holdings: PORTFOLIO_JSON env (GitHub Secret) first, then portfolio.json; {} if neither.
+    The report repo is public, so the numbers live in a secret or a git-ignored file, never in git.
+    """
+    raw = os.getenv('PORTFOLIO_JSON')
+    if raw:
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            data = None
+    else:
+        data = _load_json(path or PORTFOLIO_FILE)
+    return data if isinstance(data, dict) else {}
+
+
+WATCHLIST = load_watchlist()
+_ENTRIES = [t for t in WATCHLIST['tickers'] if isinstance(t, dict) and t.get('symbol')]
+
 # 추적할 종목 리스트 (티커 심볼)
-STOCKS_TO_TRACK = [
-    'BE',     # Bloom Energy - 고체산화물 연료전지(온사이트 발전)
-    'BWXT',   # BWX Technologies - 원자력 부품(해군 원자로 등), 방위산업
-    'CRCL',   # Circle Internet Group - 스테이블코인(USDC)·블록체인 인프라
-    'SECZ',   # Securitize - 디지털 자산 토큰화 플랫폼
-]
-
+STOCKS_TO_TRACK = [t['symbol'] for t in _ENTRIES]
 # 경쟁사 매핑 (각 종목별 경쟁사)
-COMPETITOR_MAP = {
-    'BE': ['FCEL', 'PLUG', 'HYLN'],           # Bloom Energy의 경쟁사 (연료전지·분산발전)
-    'BWXT': ['RTX', 'LMT', 'NOC'],            # BWX Technologies의 경쟁사 (방위산업)
-    'CRCL': ['COIN', 'PYPL'],                 # Circle의 경쟁사 (크립토·결제)
-    'SECZ': ['COIN', 'GLXY', 'BKKT'],         # Securitize의 경쟁사 (디지털 자산 인프라)
-}
-
+COMPETITOR_MAP = {t['symbol']: list(t.get('competitors') or []) for t in _ENTRIES}
 # 뉴스 검색(Google News)에 쓰는 회사명
-STOCK_NAMES = {
-    'BE': 'Bloom Energy',
-    'BWXT': 'BWX Technologies',
-    'CRCL': 'Circle Internet Group',
-    'SECZ': 'Securitize',
-}
-
+STOCK_NAMES = {t['symbol']: t.get('name') or t['symbol'] for t in _ENTRIES}
+# 사용자 시나리오 EPS: {ticker: {'2027': 0.65, ...}}
+SCENARIO_EPS = {t['symbol']: t['scenario_eps'] for t in _ENTRIES if t.get('scenario_eps')}
+SCENARIO_NOTES = {t['symbol']: t.get('scenario_note', '') for t in _ENTRIES if t.get('scenario_eps')}
 # 시장 맥락으로 함께 보여 줄 지수 (티커, 표시 이름)
 MARKET_CONTEXT = [
-    ('^GSPC', 'S&P 500'),
-    ('^IXIC', 'Nasdaq'),
-    ('BTC-USD', 'Bitcoin'),
+    (m['symbol'], m.get('name') or m['symbol']) for m in WATCHLIST.get('market_context', [])
 ]
+VALUATION_MULTIPLES = WATCHLIST.get('valuation_multiples') or [20, 30, 40]
+POLICY_QUERIES = WATCHLIST.get('policy_queries') or []
+USER_EVENTS = WATCHLIST.get('events') or []
+CHECKLIST = WATCHLIST.get('checklist') or {}
+PORTFOLIO = load_portfolio()
+# 공개 저장소에 올라가는 리포트에 금액까지 넣을지 (기본: 수익률·비중(%)만)
+PORTFOLIO_PUBLISH_AMOUNTS = os.getenv('PORTFOLIO_PUBLISH_AMOUNTS') == '1'
 
 # ============================================
 # Schedule Configuration
 # ============================================
-# 매일 실행할 시간 (24시간 형식)
-DAILY_REPORT_TIME = '09:00'  # 오전 9시
+# 매일 실행할 시간 (24시간 형식, KST). watchlist.json의 report_time으로 바꾸세요.
+DAILY_REPORT_TIME = WATCHLIST.get('report_time') or '07:00'
+# GitHub Actions 요일 (KST 기준). scripts/sync_schedule.py가 워크플로 cron으로 바꿔 줍니다.
+DAILY_REPORT_DAYS = WATCHLIST.get('report_days') or 'tue-sat'
 
 # ============================================
 # Data Storage

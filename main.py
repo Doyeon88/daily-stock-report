@@ -8,6 +8,8 @@ import sys
 import logging
 from datetime import datetime
 
+import pytz
+
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -15,7 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (
     LOG_LEVEL, LOG_FILE, LOG_FORMAT, DATA_DIR,
     STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE,
-    ENABLE_FCM_NOTIFICATION
+    ENABLE_FCM_NOTIFICATION, SCENARIO_EPS, SCENARIO_NOTES, VALUATION_MULTIPLES, USER_EVENTS, CHECKLIST,
+    PORTFOLIO, PORTFOLIO_PUBLISH_AMOUNTS
 )
 
 logger = logging.getLogger(__name__)
@@ -63,9 +66,10 @@ def main():
     try:
         # Import data collectors, processors and notifications
         from scrapers import (
-            competitor_scraper, news_scraper, sec_filings, stock_details, yfinance_scraper
+            analyst_changes, competitor_scraper, institutional, news_scraper, policy_tracker,
+            sec_filings, stock_details, yfinance_scraper
         )
-        from processors import report_generator
+        from processors import calendar_events, portfolio, report_generator, valuation
         from notifications import fcm_notifier, report_publisher
 
         logger.info("Step 1: Collecting stock data...")
@@ -97,10 +101,34 @@ def main():
         )
         logger.info(f"- {len(comparison.get('market', []))} market index(es)")
 
+        logger.info("Step 5b: Analyst and consensus changes, 13F holders (13F season only), policy news...")
+        analyst = _collect_optional("Analyst changes", lambda: analyst_changes.fetch_analyst_changes(STOCKS_TO_TRACK), {})
+        holders = _collect_optional("13F holders", lambda: institutional.fetch_institutional(STOCKS_TO_TRACK), {})
+        policy = _collect_optional("Policy news", policy_tracker.fetch_policy_news, [])
+
+        # Local calculations (no network): calendar, valuation vs. scenario EPS, portfolio, checklist
+        today = datetime.now(pytz.timezone(TIMEZONE)).date()
+        calendar = calendar_events.build_calendar(today, details, USER_EVENTS)
+        valuations = {}
+        for ticker, eps in SCENARIO_EPS.items():
+            result = valuation.scenario_valuation(
+                (stock_data.get(ticker) or {}).get('price'), eps, VALUATION_MULTIPLES)
+            if result:
+                result['note'] = SCENARIO_NOTES.get(ticker, '')
+                valuations[ticker] = result
+        portfolio_result = portfolio.compute_portfolio(PORTFOLIO, stock_data)
+        extras = {
+            'analyst': analyst, 'institutional': holders, 'policy': policy, 'calendar': calendar,
+            'valuation': valuations,
+            'portfolio': portfolio_result,   # 금액 포함: 로컬 출력용, 저장소에는 올리지 않는다
+            'portfolio_public': portfolio.public_view(portfolio_result, PORTFOLIO_PUBLISH_AMOUNTS),
+            'checklist': calendar_events.build_checklists(STOCKS_TO_TRACK, calendar, CHECKLIST),
+        }
+
         # CEO social media monitoring is not implemented
 
         logger.info("Step 6: Generating report...")
-        report = report_generator.generate_report(stock_data, details, news, filings, comparison)
+        report = report_generator.generate_report(stock_data, details, news, filings, comparison, extras)
         logger.info(f"[OK] Report generated ({len(report['flags'])} signal(s))")
 
         logger.info("Step 7: Sending push notification...")

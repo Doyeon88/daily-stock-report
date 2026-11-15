@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import pytz
 
 from config import TIMEZONE
+from processors import tagging
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ def generate_report(
     news: Optional[Dict[str, List[Dict]]] = None,
     filings: Optional[Dict[str, Dict]] = None,
     comparison: Optional[Dict] = None,
+    extras: Optional[Dict] = None,
 ) -> Dict:
     """
     Generate a report dictionary from collected stock data
@@ -104,6 +106,8 @@ def generate_report(
         news: ticker -> headlines (scrapers.news_scraper), optional
         filings: ticker -> SEC filings (scrapers.sec_filings), optional
         comparison: competitor and market changes (scrapers.competitor_scraper), optional
+        extras: optional sections: 'analyst', 'institutional', 'policy', 'calendar', 'valuation',
+                'portfolio', 'checklist' (each already computed by its own module)
 
     Returns:
         dict: Report data compatible with notifications.fcm_notifier.send_report
@@ -150,6 +154,20 @@ def generate_report(
         'filings': filings,
         'comparison': comparison or {},
     }
+
+    # 호재/중립/악재 태그: 뉴스(미검증)와 공시(검증)에 붙이고 종목별 종합 태그를 낸다
+    report['news'] = {t: tagging.tag_news(items) for t, items in news.items()}
+    report['filings'] = {
+        t: dict(f, filings=tagging.tag_filings(f.get('filings', []))) for t, f in filings.items()
+    }
+    report['tags'] = {
+        t: tagging.overall_tag(
+            [a['tag'] for a in report['news'].get(t, [])]
+            + [x['tag'] for x in report['filings'].get(t, {}).get('filings', [])]
+        )
+        for t in tickers
+    }
+    report.update(extras or {})
 
     logger.info(f"Generated report: {summary}")
     return report
