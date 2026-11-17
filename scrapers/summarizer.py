@@ -3,7 +3,8 @@
 
 우선순위:
  1. ANTHROPIC_API_KEY가 있으면 Claude가 제목·발췌문만 근거로 한국어 1~2문장 요약 (summary_source='ai')
- 2. 없거나 실패하면 기사 발췌문(Finnhub 요약, 페이지의 og:description)을 그대로 (summary_source='snippet')
+ 1b. 키가 없거나 실패하면 GitHub Models(Actions의 GITHUB_TOKEN, 워크플로에 models: read 권한 필요)로 같은 요약
+ 2. 그것도 안 되면 기사 발췌문(Finnhub 요약, 페이지의 og:description)을 그대로 (summary_source='snippet')
  3. 둘 다 없으면 요약 없음 (제목만). 본문 전체를 읽지 못하므로 '요약'은 제목·발췌 범위를 넘지 않습니다.
 요약은 언론 기사 기반이라 '미검증' 표시는 그대로 유지됩니다.
 """
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 ANTHROPIC_API_KEY = (os.getenv('ANTHROPIC_API_KEY') or '').strip() or None
 ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL') or 'claude-haiku-5-5'
 API_URL = 'https://api.anthropic.com/v1/messages'
+# GitHub Models: GitHub Actions의 자동 토큰으로 호출(별도 키 없음). 사용 가능한 모델·한도는 GitHub 계정 설정을 따릅니다.
+GITHUB_MODELS_TOKEN = (os.getenv('GITHUB_TOKEN') or '').strip() or None
+GITHUB_MODELS_MODEL = os.getenv('GITHUB_MODELS_MODEL') or 'openai/gpt-4.1-mini'
+GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 PAGE_TIMEOUT = 6
 API_TIMEOUT = 40
 MAX_WORKERS = 8
@@ -87,8 +92,8 @@ def parse_ai_summaries(text: str, expected: int) -> Optional[List[str]]:
     return [clip(x) for x in data]
 
 
-def ai_summaries(articles: List[Dict]) -> Optional[List[str]]:
-    if not ANTHROPIC_API_KEY or not articles:
+def _claude_summaries(articles: List[Dict]) -> Optional[List[str]]:
+    if not ANTHROPIC_API_KEY:
         return None
     try:
         response = requests.post(
@@ -103,8 +108,35 @@ def ai_summaries(articles: List[Dict]) -> Optional[List[str]]:
         text = ''.join(b.get('text', '') for b in response.json().get('content', []))
         return parse_ai_summaries(text, len(articles))
     except Exception as e:
-        logger.error(f"AI summary unavailable, using excerpts instead: {e}")
+        logger.error(f"Claude summaries unavailable: {e}")
         return None
+
+
+def _github_models_summaries(articles: List[Dict]) -> Optional[List[str]]:
+    if not GITHUB_MODELS_TOKEN:
+        return None
+    try:
+        response = requests.post(
+            GITHUB_MODELS_URL,
+            headers={'Authorization': f'Bearer {GITHUB_MODELS_TOKEN}', 'Accept': 'application/vnd.github+json',
+                     'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json'},
+            json={'model': GITHUB_MODELS_MODEL, 'max_tokens': 1500, 'temperature': 0.2,
+                  'messages': [{'role': 'user', 'content': build_prompt(articles)}]},
+            timeout=API_TIMEOUT,
+        )
+        response.raise_for_status()
+        text = response.json()['choices'][0]['message']['content']
+        return parse_ai_summaries(text, len(articles))
+    except Exception as e:
+        logger.error(f"GitHub Models summaries unavailable: {e}")
+        return None
+
+
+def ai_summaries(articles: List[Dict]) -> Optional[List[str]]:
+    """Claude first, then GitHub Models; None if neither is configured or both fail"""
+    if not articles:
+        return None
+    return _claude_summaries(articles) or _github_models_summaries(articles)
 
 
 def add_summaries(groups: List[List[Dict]], fetch_pages: bool = True) -> None:
