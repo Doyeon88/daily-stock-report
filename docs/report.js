@@ -215,6 +215,33 @@ function formatNews(article) {
   };
 }
 
+// 리포트 목록: 애널리스트 변경(Yahoo 집계)과 공시를 날짜순으로 합칩니다. 공시 본문은 읽지 않아 요약은 양식 설명입니다.
+function formatReportItems(analystEntry, filingInfo) {
+  const items = [];
+  for (const r of (analystEntry && analystEntry.ratings) || []) {
+    const grade = r.from_grade && r.to_grade ? r.from_grade + ' → ' + r.to_grade : r.to_grade || r.action || '';
+    const target = has(r.target) ? '목표가 ' + (has(r.prior_target) ? money(r.prior_target) + ' → ' : '') + money(r.target) : '';
+    items.push({
+      kind: '애널리스트', date: String(r.date), title: r.firm + (grade ? ' · ' + grade : ''),
+      summary: [grade ? '투자의견 ' + grade : null, target || null].filter(Boolean).join(' · '),
+      url: null, tag: '', origin: 'Yahoo 집계',
+    });
+  }
+  for (const f of (filingInfo && filingInfo.filings) || []) {
+    const item = formatFiling(f);
+    items.push({
+      kind: '공시', date: String(f.date), title: f.form + ' · ' + String(f.date).slice(5),
+      summary: f.summary || '', url: item.url, tag: item.tag, origin: '✔검증(SEC/Yahoo)',
+    });
+  }
+  return items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+function summaryLabel(article) {
+  if (!article.summary) return '';
+  return article.summary_source === 'ai' ? 'AI 요약(제목·발췌 기준)' : '기사 발췌';
+}
+
 // ---------- 화면 만들기 (값은 모두 textContent 로 넣어 HTML 이 끼어들 수 없게 합니다) ----------
 
 function renderReport(doc, data) {
@@ -262,7 +289,8 @@ function renderReport(doc, data) {
     const ul = doc.getElementById(listId);
     for (const e of entries) {
       const li = element('li', e.tone || '');
-      if (e.url) li.appendChild(link(e.text, e.url)); else li.textContent = e.text;
+      if (e.url) li.appendChild(link(e.text, e.url)); else li.appendChild(element('span', '', e.text));
+      if (e.summary) li.appendChild(element('div', 'summary', e.summary));
       if (e.meta) li.appendChild(element('div', 'meta', e.meta));
       ul.appendChild(li);
     }
@@ -276,12 +304,15 @@ function renderReport(doc, data) {
   for (const group of data.policy || []) {
     for (const a of group.articles || []) {
       const n = formatNews(a);
-      policyEntries.push({ text: n.title, url: n.url, meta: group.query + ' · ' + n.meta + ' · ?미검증' });
+      policyEntries.push({
+        text: n.title, url: n.url, summary: a.summary || '',
+        meta: [group.query, n.meta, summaryLabel(a), '?미검증'].filter(Boolean).join(' · '),
+      });
     }
   }
   fill('policy', 'policy-list', policyEntries);
 
-  // 가격 표
+  // 가격 표 (전체 탭)
   const body = doc.getElementById('rows');
   for (const row of data.s) {
     const item = formatRow(row);
@@ -304,29 +335,67 @@ function renderReport(doc, data) {
     body.appendChild(tr);
   }
 
-  // 종목별 카드 (상세 데이터가 있을 때만)
+  // 종목별 패널 (상세 데이터가 있을 때만) 과 최상단 탭
   const cards = doc.getElementById('cards');
+  const tabs = doc.getElementById('tabs');
+  const overview = doc.getElementById('panel-overview');
+  const panels = [{ id: 'overview', button: null, panel: overview }];
   const details = data.details || {};
   const news = data.news || {};
   const filings = data.filings || {};
   const peers = (data.comparison && data.comparison.peers) || {};
+
+  const select = (id) => {
+    for (const p of panels) {
+      const on = p.id === id;
+      p.panel.hidden = !on;
+      if (p.button) {
+        p.button.className = p.button.className.replace(/\s*\bactive\b/, '') + (on ? ' active' : '');
+        p.button.setAttribute('aria-selected', on ? 'true' : 'false');
+      }
+    }
+  };
+  const addTab = (id, label, tone, panel) => {
+    const button = element('button', 'tab');
+    button.setAttribute('role', 'tab');
+    button.setAttribute('type', 'button');
+    button.appendChild(element('span', 'tab-name', label));
+    if (tone && tone.text) button.appendChild(element('span', 'tab-chg ' + tone.cls, tone.text));
+    button.addEventListener('click', () => select(id));
+    tabs.appendChild(button);
+    panels.push({ id, button, panel });
+    return button;
+  };
+  const overviewButton = element('button', 'tab');
+  overviewButton.setAttribute('role', 'tab');
+  overviewButton.setAttribute('type', 'button');
+  overviewButton.appendChild(element('span', 'tab-name', '전체'));
+  overviewButton.addEventListener('click', () => select('overview'));
+  tabs.appendChild(overviewButton);
+  panels[0].button = overviewButton;
+
   for (const row of data.s) {
     const ticker = String(row[0]);
     const lines = formatDetailLines(details[ticker], peers[ticker]);
     const valuationLines = formatValuation((data.valuation || {})[ticker]);
-    const analystLines = formatAnalyst((data.analyst || {})[ticker]);
+    const analystEntry = (data.analyst || {})[ticker];
+    const analystLines = formatAnalyst(analystEntry);
     const holders = ((data.institutional || {})[ticker] || {}).holders || [];
     const check = (data.checklist || {})[ticker];
     const filingInfo = filings[ticker] || { filings: [], form4_count: 0 };
     const articles = news[ticker] || [];
-    if (!lines.length && !filingInfo.filings.length && !filingInfo.form4_count && !articles.length
-      && !valuationLines.length && !analystLines.length && !holders.length && !check) continue;
+    const reports = formatReportItems(analystEntry, filingInfo);
+    const quote = formatRow(row);
 
-    const card = element('section', 'card');
+    const card = element('section', 'card panel');
+    card.hidden = true;
+
     const heading = element('h2', '', ticker);
     const overall = (data.tags || {})[ticker];
     if (overall) heading.appendChild(element('span', 'tag ' + tagTone(overall), overall));
     card.appendChild(heading);
+    card.appendChild(element('div', 'quote ' + (quote.unavailable ? '' : quote.direction),
+      quote.unavailable ? '데이터 없음 (' + quote.note + ')' : quote.price + ' ' + quote.change + ' (' + quote.percent + ')'));
 
     const list = element('dl', 'lines');
     for (const line of lines) {
@@ -342,12 +411,48 @@ function renderReport(doc, data) {
       for (const text of entries) ul.appendChild(element('li', '', text));
       card.appendChild(ul);
     };
+
+    // 기사: 제목 링크 + 요약
+    if (articles.length) {
+      card.appendChild(element('h3', '', '기사 (' + articles.length + ')'));
+      const ul = element('ul', 'items');
+      for (const article of articles) {
+        const n = formatNews(article);
+        const li = element('li');
+        if (article.tag) li.appendChild(element('span', 'tag ' + tagTone(article.tag), article.tag));
+        li.appendChild(link(n.title, n.url));
+        if (article.summary) li.appendChild(element('div', 'summary', article.summary));
+        const label = summaryLabel(article);
+        li.appendChild(element('div', 'meta', [n.meta, label, verifiedMark(article.verified === true)].filter(Boolean).join(' · ')));
+        ul.appendChild(li);
+      }
+      card.appendChild(ul);
+    }
+
+    // 리포트: 애널리스트 의견 변경 + 공시
+    if (reports.length || filingInfo.form4_count) {
+      card.appendChild(element('h3', '', '리포트·공시 (' + reports.length + ')' + (filingInfo.source === 'yahoo' ? ' · 공시는 Yahoo Finance 제공' : '')));
+      const ul = element('ul', 'items');
+      for (const item of reports) {
+        const li = element('li');
+        li.appendChild(element('span', 'kind', item.kind));
+        if (item.tag) li.appendChild(element('span', 'tag ' + tagTone(item.tag), item.tag));
+        li.appendChild(link(item.title, item.url));
+        if (item.summary) li.appendChild(element('div', 'summary', item.summary));
+        li.appendChild(element('div', 'meta', item.date.slice(5) + ' · ' + item.origin));
+        ul.appendChild(li);
+      }
+      if (filingInfo.form4_count) ul.appendChild(element('li', '', '임원·대주주 거래(Form 4) ' + filingInfo.form4_count + '건 (Yahoo 목록에는 없음)'));
+      card.appendChild(ul);
+    }
+
     if (valuationLines.length) {
       const note = ((data.valuation || {})[ticker] || {}).note;
       addList('시나리오 EPS 밸류에이션 (제 추정' + (note ? ' · ' + note : '') + ')',
         valuationLines.map((v) => v.label + ' ' + v.text));
     }
-    addList('애널리스트·컨센서스 변화 (Yahoo 집계)', analystLines);
+    addList('EPS 컨센서스 변화 (Yahoo 집계)', ((analystEntry && analystEntry.eps_trend) || []).length
+      ? analystLines.filter((t) => t.startsWith('EPS 컨센')) : []);
     addList('13F 기관 보유 (지연·롱온리·패시브 포함, 원문 확인 필요)', holders.map(formatHolder));
     if (check) {
       addList('다음 이벤트 체크리스트', [
@@ -356,37 +461,10 @@ function renderReport(doc, data) {
       ]);
     }
 
-    if (filingInfo.filings.length || filingInfo.form4_count) {
-      // Yahoo가 대신 준 목록은 임원 거래(Form 4)가 없고 8-K 항목 설명도 없다
-      card.appendChild(element('h3', '', 'SEC 공시 (최근 7일)' + (filingInfo.source === 'yahoo' ? ' · Yahoo Finance 제공' : '')));
-      const ul = element('ul', 'items');
-      for (const filing of filingInfo.filings) {
-        const f = formatFiling(filing);
-        const li = element('li');
-        if (f.tag) li.appendChild(element('span', 'tag ' + tagTone(f.tag), f.tag));
-        li.appendChild(link(f.text, f.url));
-        li.appendChild(element('span', 'meta', ' ' + verifiedMark(f.verified)));
-        ul.appendChild(li);
-      }
-      if (filingInfo.form4_count) ul.appendChild(element('li', '', '임원·대주주 거래(Form 4) ' + filingInfo.form4_count + '건'));
-      card.appendChild(ul);
-    }
-
-    if (articles.length) {
-      card.appendChild(element('h3', '', '뉴스'));
-      const ul = element('ul', 'items');
-      for (const article of articles) {
-        const n = formatNews(article);
-        const li = element('li');
-        if (article.tag) li.appendChild(element('span', 'tag ' + tagTone(article.tag), article.tag));
-        li.appendChild(link(n.title, n.url));
-        if (n.meta) li.appendChild(element('div', 'meta', n.meta + ' · ' + verifiedMark(article.verified === true)));
-        ul.appendChild(li);
-      }
-      card.appendChild(ul);
-    }
     cards.appendChild(card);
+    addTab(ticker, ticker, quote.unavailable ? null : { text: quote.percent, cls: quote.direction }, card);
   }
+  select('overview');
 }
 
 if (typeof document !== 'undefined') {
@@ -399,6 +477,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
     formatFiling, formatNews, formatNewsTime, renderReport, DATA_URL_PREFIX,
-    formatValuation, formatAnalyst, formatHolder, formatCalendarItem, formatPortfolio, classTag: tagTone,
+    formatValuation, formatAnalyst, formatHolder, formatCalendarItem, formatPortfolio, formatReportItems,
+    summaryLabel, classTag: tagTone,
   };
 }

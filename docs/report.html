@@ -34,6 +34,18 @@
     h2 .tag { margin-left: .5rem; vertical-align: middle; }
     .box { border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .9rem; margin-bottom: 1rem; }
     .box ul { margin: 0; padding-left: 1.1rem; font-size: .9rem; }
+    [hidden] { display: none !important; }
+    #tabs { display: flex; gap: .4rem; overflow-x: auto; position: sticky; top: 0; z-index: 5; background: Canvas;
+            padding: .5rem 0; margin-bottom: .8rem; border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+    .tab { flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: .35rem; font: inherit; font-size: .9rem; cursor: pointer;
+           color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 1rem; padding: .25rem .7rem; }
+    .tab.active { background: CanvasText; color: Canvas; border-color: CanvasText; }
+    .tab-name { font-weight: 700; }
+    .tab-chg { font-size: .72rem; }
+    .tab.active .tab-chg { color: inherit; }
+    .quote { font-size: 1.05rem; font-weight: 700; margin-bottom: .5rem; }
+    .summary { font-size: .85rem; color: inherit; opacity: .85; margin-top: .1rem; }
+    .kind { font-size: .7rem; color: var(--muted); border: 1px solid var(--line); border-radius: .3rem; padding: 0 .3rem; margin-right: .35rem; }
     .hint { color: var(--muted); font-size: .8rem; margin-top: 1rem; }
     /* 폰 화면: 글자와 여백을 줄여 5열이 한 화면에 들어오게 한다 */
     @media (max-width: 520px) {
@@ -52,6 +64,8 @@
   <h1>📈 Daily Stock Report</h1>
   <div id="status"></div>
   <div id="market"></div>
+  <nav id="tabs" role="tablist" aria-label="종목 탭"></nav>
+  <div id="panel-overview" class="panel">
   <section id="flags" hidden>
     <h2>오늘의 신호</h2>
     <ul id="flag-list"></ul>
@@ -65,6 +79,7 @@
     <tbody id="rows"></tbody>
   </table>
   <section id="policy" class="box" hidden><h2>정책·규제</h2><ul id="policy-list"></ul></section>
+  </div>
   <div id="notice"></div>
   <div id="cards"></div>
   <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다. 호재/중립/악재 태그는 키워드 자동 분류(참고용), ✔검증은 공시·거래소 데이터, ?미검증은 언론 헤드라인·수동 입력입니다. 투자 권유가 아닙니다.</p>

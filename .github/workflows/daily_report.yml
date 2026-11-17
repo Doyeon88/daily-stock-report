@@ -43,4 +43,6 @@ jobs:
           # (선택) 내 보유 종목 JSON(portfolio.example.json 형식). 저장소가 공개라서 파일이 아니라 Secret으로만 넣는다.
           # 공개되는 리포트에는 수익률·비중(%)만 실리고 금액은 실리지 않는다(PORTFOLIO_PUBLISH_AMOUNTS=1일 때만 금액 포함)
           PORTFOLIO_JSON: ${{ secrets.PORTFOLIO_JSON }}
+          # (선택) 기사 한국어 요약용 Anthropic API 키. 없으면 기사 발췌문을 그대로 보여 준다
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python main.py

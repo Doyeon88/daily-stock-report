@@ -10,6 +10,12 @@ from typing import Dict, Iterable, List
 
 BULLISH, NEUTRAL, BEARISH = '호재', '중립', '악재'
 
+
+def _describe(filing: Dict) -> str:
+    # imported here: scrapers.sec_filings needs config/network libraries that tagging itself does not
+    from scrapers.sec_filings import describe_form
+    return describe_form(filing.get('form', ''), filing.get('label', ''))
+
 POSITIVE_WORDS = (
     'beat', 'beats', 'surge', 'soar', 'jump', 'record', 'raises', 'raised', 'upgrade', 'upgraded',
     'wins', 'awarded', 'contract', 'expands', 'expansion', 'approval', 'approved', 'partnership',
@@ -50,7 +56,8 @@ def tag_news(articles: Iterable[Dict]) -> List[Dict]:
 def tag_filings(filings: Iterable[Dict]) -> List[Dict]:
     """Copy of the filings with 'tag' and 'verified' (an SEC/Yahoo filing exists, so the fact is verified)"""
     return [
-        dict(f, tag=FILING_LABEL_TAGS.get(f.get('label', ''), NEUTRAL), verified=True)
+        dict(f, tag=FILING_LABEL_TAGS.get(f.get('label', ''), NEUTRAL), verified=True,
+             summary=f.get('summary') or _describe(f))
         for f in filings or []
     ]
 

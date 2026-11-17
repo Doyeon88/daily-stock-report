@@ -5,6 +5,7 @@ Sources: Finnhub company news (official, needs FINNHUB_API_KEY, skipped without 
 Google News RSS (no key, unofficial). Results are merged, de-duplicated and sorted newest first.
 """
 
+import html
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 15
 MAX_TITLE_LENGTH = 140
+MAX_SNIPPET_LENGTH = 600
 
 
 def _finnhub_news(ticker: str, now: datetime) -> List[Dict]:
@@ -38,10 +40,18 @@ def _finnhub_news(ticker: str, now: datetime) -> List[Dict]:
             'source': article.get('source'),
             'url': article['url'],
             'published': datetime.fromtimestamp(article['datetime'], tz=timezone.utc),
+            'snippet': (article.get('summary') or '').strip(),
         }
         for article in response.json()
         if article.get('headline') and article.get('url') and article.get('datetime')
     ]
+
+
+def _rss_snippet(description, title: str) -> str:
+    """Plain text of an RSS description; '' when it only repeats the headline (Google News usually does)"""
+    text = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', description or ''))).strip()
+    key = re.sub(r'[^a-z0-9]+', '', text.lower())
+    return '' if not text or re.sub(r'[^a-z0-9]+', '', title.lower()) in key else text
 
 
 def _google_news(ticker: str, now: datetime) -> List[Dict]:
@@ -72,6 +82,7 @@ def google_news_query(query: str, now: datetime, lookback_days: int = NEWS_LOOKB
             articles.append({
                 'title': title, 'source': source, 'url': link,
                 'published': parsedate_to_datetime(published),
+                'snippet': _rss_snippet(item.findtext('description'), title),
             })
     return articles
 
@@ -92,6 +103,7 @@ def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBA
             'source': article['source'],
             'url': article['url'],
             'published': article['published'].astimezone(timezone.utc).isoformat(timespec='minutes'),
+            'snippet': (article.get('snippet') or '')[:MAX_SNIPPET_LENGTH],
         })
     return merged[:NEWS_LIMIT]
 

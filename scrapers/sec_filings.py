@@ -50,6 +50,29 @@ ITEM_LABELS = {
 }
 
 
+# 양식별 한 줄 설명 (공시 본문은 읽지 않으므로 양식 종류에 대한 설명입니다)
+FORM_DESCRIPTIONS = {
+    '8-K': '수시 공시(주요 사건 보고)',
+    '10-Q': '분기보고서(재무제표·MD&A)',
+    '10-K': '연간보고서',
+    'S-1': '증권 신고서(IPO·상장·유상증자 준비)',
+    'S-1/A': '증권 신고서 정정',
+    '424B4': '최종 투자설명서(증권 발행 조건 확정)',
+    'SCHEDULE 13D': '5% 이상 보유 신고(경영 참여 의도 가능)',
+    'SCHEDULE 13D/A': '5% 이상 보유 변동 신고(13D)',
+    'SCHEDULE 13G': '5% 이상 보유 신고(수동적 투자)',
+    'SCHEDULE 13G/A': '5% 이상 보유 변동 신고(13G)',
+}
+FORM_DESCRIPTIONS.update({'SC 13D': FORM_DESCRIPTIONS['SCHEDULE 13D'], 'SC 13D/A': FORM_DESCRIPTIONS['SCHEDULE 13D/A'],
+                          'SC 13G': FORM_DESCRIPTIONS['SCHEDULE 13G'], 'SC 13G/A': FORM_DESCRIPTIONS['SCHEDULE 13G/A']})
+
+
+def describe_form(form: str, label: str = '') -> str:
+    """One-line description of a filing: the 8-K item label when known, else what the form is"""
+    base = FORM_DESCRIPTIONS.get(form, form)
+    return f"{base} · {label}" if label else base
+
+
 class SecRefusedError(Exception):
     """SEC answered 403: it refuses this client (User-Agent or IP), so asking again cannot help"""
 

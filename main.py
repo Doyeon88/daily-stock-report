@@ -67,7 +67,7 @@ def main():
         # Import data collectors, processors and notifications
         from scrapers import (
             analyst_changes, competitor_scraper, institutional, news_scraper, policy_tracker,
-            sec_filings, stock_details, yfinance_scraper
+            sec_filings, stock_details, summarizer, yfinance_scraper
         )
         from processors import calendar_events, portfolio, report_generator, valuation
         from notifications import fcm_notifier, report_publisher
@@ -88,6 +88,7 @@ def main():
         logger.info("Step 3: Collecting news...")
         news = _collect_optional("News", lambda: news_scraper.fetch_news(STOCKS_TO_TRACK), {})
         logger.info(f"- {sum(len(items) for items in news.values())} headline(s)")
+        _collect_optional("News summaries", lambda: summarizer.add_summaries(list(news.values())), None)
 
         logger.info("Step 4: Collecting SEC filings...")
         filings = _collect_optional(
@@ -105,6 +106,8 @@ def main():
         analyst = _collect_optional("Analyst changes", lambda: analyst_changes.fetch_analyst_changes(STOCKS_TO_TRACK), {})
         holders = _collect_optional("13F holders", lambda: institutional.fetch_institutional(STOCKS_TO_TRACK), {})
         policy = _collect_optional("Policy news", policy_tracker.fetch_policy_news, [])
+        _collect_optional(
+            "Policy summaries", lambda: summarizer.add_summaries([g['articles'] for g in policy]), None)
 
         # Local calculations (no network): calendar, valuation vs. scenario EPS, portfolio, checklist
         today = datetime.now(pytz.timezone(TIMEZONE)).date()
