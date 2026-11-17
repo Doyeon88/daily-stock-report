@@ -144,7 +144,10 @@ def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBA
             continue
         positions[key] = len(merged)
         merged.append(entry)
-    return merged[:limit or NEWS_LIMIT]
+    # 요약 재료가 있는 기사(Finnhub·Yahoo의 발췌문)를 먼저 고르고, 모자라면 발췌문 없는 기사(Google News)로 채운다.
+    # 고른 뒤에는 다시 최신순으로 보여 준다.
+    ranked = sorted(range(len(merged)), key=lambda i: (not merged[i]['snippet'], i))
+    return [merged[i] for i in sorted(ranked[:limit or NEWS_LIMIT])]
 
 
 ANALYST_WORDS = (
@@ -166,11 +169,39 @@ def _google_analyst_news(ticker: str, now: datetime) -> List[Dict]:
     return google_news_query(f'"{name}" analyst price target', now, lookback_days=ANALYST_LOOKBACK_DAYS)
 
 
-def _sources():
-    sources = [('Google News', _google_news), ('Yahoo Finance', _yahoo_news)]
+def _primary_sources():
+    """Sources with excerpts and real article links; Google News only fills what these cannot"""
+    sources = [('Yahoo Finance', _yahoo_news)]
     if FINNHUB_API_KEY:
         sources.insert(0, ('Finnhub', _finnhub_news))
     return sources
+
+
+def _sources():
+    return _primary_sources() + [('Google News', _google_news)]
+
+
+def _add_from(articles: List[Dict], sources, ticker: str, now: datetime) -> None:
+    for name, fetch in sources:
+        try:
+            articles += call_with_retry(lambda: fetch(ticker, now), f"{name} for {ticker}")
+        except Exception as e:
+            logger.error(f"{name} unavailable for {ticker}: {e}")
+
+
+def _excerpt_count(articles: List[Dict], now: datetime, limit: int, only=None, lookback_days=None) -> int:
+    pool = [a for a in articles if only is None or only(a['title'])]
+    kwargs = {'lookback_days': lookback_days} if lookback_days else {}
+    return sum(1 for a in _merge(pool, now, limit=limit, **kwargs) if a['snippet'])
+
+
+def _collect_articles(ticker: str, now: datetime) -> List[Dict]:
+    """Finnhub and Yahoo first; Google News only when they give fewer than NEWS_LIMIT articles with an excerpt"""
+    articles: List[Dict] = []
+    _add_from(articles, _primary_sources(), ticker, now)
+    if _excerpt_count(articles, now, NEWS_LIMIT) < NEWS_LIMIT:
+        _add_from(articles, [('Google News', _google_news)], ticker, now)
+    return articles
 
 
 def fetch_news_bundle(tickers: List[str], now: Optional[datetime] = None) -> Dict[str, Dict[str, List[Dict]]]:
@@ -185,17 +216,16 @@ def fetch_news_bundle(tickers: List[str], now: Optional[datetime] = None) -> Dic
         are reused when an article is in both.
     """
     now = now or datetime.now(timezone.utc)
-    sources = _sources()
-    logger.info(f"Fetching news for {len(tickers)} ticker(s) from: {[name for name, _ in sources]}")
+    logger.info(f"Fetching news for {len(tickers)} ticker(s) from: {[name for name, _ in _sources()]} "
+                "(Google News only to fill up)")
 
     news, analyst = {}, {}
     for ticker in tickers:
-        articles = []
-        for name, fetch in sources + [('Google News (analyst)', _google_analyst_news)]:
-            try:
-                articles += call_with_retry(lambda: fetch(ticker, now), f"{name} for {ticker}")
-            except Exception as e:
-                logger.error(f"{name} unavailable for {ticker}: {e}")
+        articles = _collect_articles(ticker, now)
+        # Google's analyst search is the last resort, too: only if the analyst articles found so far lack excerpts
+        if _excerpt_count(articles, now, ANALYST_LIMIT, only=is_analyst_article,
+                          lookback_days=ANALYST_LOOKBACK_DAYS) < ANALYST_LIMIT:
+            _add_from(articles, [('Google News (analyst)', _google_analyst_news)], ticker, now)
         news[ticker] = _merge(articles, now)
         pool = _merge([a for a in articles if is_analyst_article(a['title'])], now, limit=ANALYST_LIMIT,
                       lookback_days=ANALYST_LOOKBACK_DAYS)
@@ -217,14 +247,4 @@ def fetch_news(tickers: List[str], now: Optional[datetime] = None) -> Dict[str, 
         dict: ticker -> list of {'title', 'source', 'url', 'published' (ISO, UTC)}, newest first
     """
     now = now or datetime.now(timezone.utc)
-    results = {}
-    for ticker in tickers:
-        articles = []
-        for name, fetch in _sources():
-            try:
-                articles += call_with_retry(lambda: fetch(ticker, now), f"{name} news for {ticker}")
-            except Exception as e:
-                logger.error(f"{name} news unavailable for {ticker}: {e}")
-        results[ticker] = _merge(articles, now)
-
-    return results
+    return {ticker: _merge(_collect_articles(ticker, now), now) for ticker in tickers}

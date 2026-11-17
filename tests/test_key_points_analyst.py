@@ -2,7 +2,8 @@
 Tests for the key-points material, analyst-report articles and the payload fields
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -30,7 +31,8 @@ def test_bundle_picks_analyst_articles_before_the_news_cap(monkeypatch):
     plain = [article(i, f'Plain news {i}', 1 + i * 0.1 if False else 1) for i in range(8)]
     # eight newer plain stories push the analyst story out of the five-item news list
     analyst = article(99, 'HSBC raises price target on BE', 9)
-    monkeypatch.setattr(news_scraper, '_sources', lambda: [('src', lambda t, n: plain + [analyst])])
+    monkeypatch.setattr(news_scraper, '_primary_sources', lambda: [('src', lambda t, n: plain + [analyst])])
+    monkeypatch.setattr(news_scraper, '_google_news', lambda t, n: [])
     monkeypatch.setattr(news_scraper, '_google_analyst_news', lambda t, n: [])
     monkeypatch.setattr('scrapers.retry.time.sleep', lambda _: None)
 
@@ -44,7 +46,8 @@ def test_bundle_picks_analyst_articles_before_the_news_cap(monkeypatch):
 def test_analyst_list_reuses_the_news_dict_when_the_article_is_in_both(monkeypatch):
     item = {'title': 'UBS lifts BE target price', 'source': 's', 'url': 'https://x/1', 'snippet': '',
             'published': datetime(2026, 11, 17, 11, tzinfo=timezone.utc)}
-    monkeypatch.setattr(news_scraper, '_sources', lambda: [('src', lambda t, n: [item])])
+    monkeypatch.setattr(news_scraper, '_primary_sources', lambda: [('src', lambda t, n: [item])])
+    monkeypatch.setattr(news_scraper, '_google_news', lambda t, n: [])
     monkeypatch.setattr(news_scraper, '_google_analyst_news', lambda t, n: [])
     bundle = news_scraper.fetch_news_bundle(['BE'], NOW)
     assert bundle['analyst']['BE'][0] is bundle['news']['BE'][0]
@@ -80,3 +83,54 @@ def test_payload_carries_key_points_and_analyst_articles():
     payload = build_full_payload(report)
     assert payload['key_points']['BE']['points'] == ['a']
     assert payload['analyst_articles']['BE'][0]['summary'] == '요약'
+
+
+# ---------- excerpt-first sourcing ----------
+
+def _art(i, title, hours, snippet=''):
+    return {'title': title, 'source': 's', 'url': f'https://x/{i}', 'snippet': snippet,
+            'published': NOW - timedelta(hours=hours)}
+
+
+def test_merge_prefers_articles_with_an_excerpt_and_keeps_newest_first():
+    articles = [_art(1, 'new google', 1), _art(2, 'mid google', 2), _art(3, 'old yahoo', 8, 'has excerpt'),
+                _art(4, 'older finnhub', 9, 'has excerpt')]
+    merged = news_scraper._merge(articles, NOW, limit=3)
+    assert [a['title'] for a in merged] == ['new google', 'old yahoo', 'older finnhub']
+
+
+def test_google_is_not_asked_when_the_primary_sources_are_enough(monkeypatch):
+    primary = [_art(i, f'story {i}', 1 + i * 0.01, 'excerpt') for i in range(5)]
+    google = MagicMock(return_value=[_art(99, 'google story', 1)])
+    monkeypatch.setattr(news_scraper, '_primary_sources', lambda: [('Yahoo', lambda t, n: primary)])
+    monkeypatch.setattr(news_scraper, '_google_news', google)
+    monkeypatch.setattr(news_scraper, '_google_analyst_news', MagicMock(return_value=[]))
+
+    news_scraper.fetch_news(['BE'], NOW)
+
+    google.assert_not_called()
+
+
+def test_google_fills_up_when_the_primary_sources_give_too_few(monkeypatch):
+    primary = [_art(1, 'only yahoo', 1, 'excerpt')]
+    google = MagicMock(return_value=[_art(2, 'google story', 2)])
+    monkeypatch.setattr(news_scraper, '_primary_sources', lambda: [('Yahoo', lambda t, n: primary)])
+    monkeypatch.setattr(news_scraper, '_google_news', google)
+
+    result = news_scraper.fetch_news(['BE'], NOW)
+
+    google.assert_called_once()
+    assert [a['title'] for a in result['BE']] == ['only yahoo', 'google story']
+
+
+def test_google_analyst_search_is_skipped_when_excerpt_articles_suffice(monkeypatch):
+    analysts = [_art(i, f'Bank {i} raises price target', 1 + i * 0.01, 'excerpt') for i in range(5)]
+    analyst_google = MagicMock(return_value=[])
+    monkeypatch.setattr(news_scraper, '_primary_sources', lambda: [('Yahoo', lambda t, n: analysts)])
+    monkeypatch.setattr(news_scraper, '_google_news', MagicMock(return_value=[]))
+    monkeypatch.setattr(news_scraper, '_google_analyst_news', analyst_google)
+
+    bundle = news_scraper.fetch_news_bundle(['BE'], NOW)
+
+    analyst_google.assert_not_called()
+    assert len(bundle['analyst']['BE']) == 5
