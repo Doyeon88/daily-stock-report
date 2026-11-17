@@ -193,7 +193,7 @@ def build_prompt(articles: List[Dict], bodies: Optional[Dict[int, str]] = None) 
         '- 본문이 없는 기사: 제목과 발췌문이 말하는 내용만 1~2줄로 씁니다(줄 수를 채우려고 지어내지 않습니다).',
         '규칙: 주어진 본문·제목·발췌문에 있는 내용만 쓰고 추측·평가·투자 의견을 넣지 않습니다. 숫자·고유명사는 그대로 둡니다.',
         '출력은 JSON 하나뿐입니다: 입력과 같은 순서·같은 개수의 배열이고, 각 원소는 그 기사의 줄들(문자열 배열)입니다. '
-        '예: [["첫 줄", "둘째 줄"], ["…"]]', '',
+        '예: [["첫 줄", "둘째 줄"], ["…"]]. 문장 안에는 큰따옴표(")와 줄바꿈을 쓰지 말고 작은따옴표를 쓰세요.', '',
     ]
     for i, a in enumerate(articles, 1):
         entry = f"{i}. 제목: {a.get('title', '')}\n   발췌: {a.get('snippet') or '(없음)'}"
@@ -322,7 +322,15 @@ def ai_text(prompt: str) -> Optional[str]:
 def ai_summaries(articles: List[Dict], bodies: Optional[Dict[int, str]] = None) -> Optional[List[str]]:
     if not articles:
         return None
-    return parse_ai_summaries(ai_text(build_prompt(articles, bodies)), len(articles))
+    prompt = build_prompt(articles, bodies)
+    for attempt in (1, 2):
+        text = ai_text(prompt)
+        summaries = parse_ai_summaries(text, len(articles))
+        if summaries or text is None:
+            return summaries
+        logger.warning(f"AI summary answer unusable (attempt {attempt}/2, {len(articles)} articles): "
+                       f"{(text or '')[:200]!r} ... {(text or '')[-120:]!r}")
+    return None
 
 
 def ai_key_points(ticker: str, material: str) -> Optional[List[str]]:
