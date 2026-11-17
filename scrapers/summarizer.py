@@ -172,7 +172,8 @@ def _github_models_text(prompt: str) -> Optional[str]:
                          {'model': model, 'max_tokens': 1500, 'temperature': 0.2,
                           'messages': [{'role': 'user', 'content': prompt}]})
             return body['choices'][0]['message']['content']
-        except ProviderUnusable as e:
+        except (ProviderUnusable, requests.ConnectionError) as e:
+            # 주소가 풀리지 않거나(DNS) 연결이 안 되는 경우도 다시 부르지 않는다
             _unusable.add(url)
             logger.error(f"GitHub Models endpoint {url} unusable, skipping it for this run: {e}")
         except Exception as e:

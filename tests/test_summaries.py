@@ -246,3 +246,13 @@ def test_key_points_fall_back_to_the_numbers(monkeypatch):
 def test_key_points_prompt_only_allows_the_given_material():
     prompt = summarizer.build_key_points_prompt('BE', '[뉴스]\n- x')
     assert '자료에 없는' in prompt and '[뉴스]' in prompt and '5개' in prompt
+
+
+def test_unresolvable_endpoint_is_marked_unusable(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', None)
+    monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', 'ghs')
+    post = MagicMock(side_effect=summarizer.requests.ConnectionError('Failed to resolve'))
+    monkeypatch.setattr(summarizer.requests, 'post', post)
+    assert summarizer._github_models_text('p') is None
+    assert summarizer._github_models_text('p') is None
+    assert post.call_count == len(summarizer.GITHUB_MODELS_ENDPOINTS)   # each endpoint is tried once per run

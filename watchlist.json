@@ -7,7 +7,7 @@
     {"symbol": "EROC", "name": "ERock",                  "competitors": ["CAT", "BE", "FPS"],
      "scenario_eps": {"2027": 0.65, "2028": 1.5, "2029": 2.5},
      "scenario_note": "사용자 시나리오(제 추정). 27년 컨센 근접, 28·29년은 가정"},
-    {"symbol": "INNIO", "name": "INNIO",                 "competitors": ["CAT", "EROC"]},
+    {"symbol": "INIO", "name": "INNIO",                 "competitors": ["CAT", "EROC"]},
     {"symbol": "CAT",  "name": "Caterpillar",            "competitors": ["BE", "EROC"]},
     {"symbol": "FPS",  "name": "Forgent Power Solutions", "competitors": ["GEV", "VRT"]},
     {"symbol": "NBIS", "name": "Nebius Group",           "competitors": ["CRWV", "ORCL"]},
