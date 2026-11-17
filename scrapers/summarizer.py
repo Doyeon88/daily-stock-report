@@ -34,13 +34,14 @@ PAGE_TIMEOUT = 6
 API_TIMEOUT = 40
 MAX_WORKERS = 8
 MAX_SUMMARY_LENGTH = 220
-MAX_LINE_LENGTH = 170          # 본문 요약 한 줄 최대 길이
+MAX_LINE_LENGTH = 140          # 본문 요약 한 줄 최대 길이
 MAX_KEY_POINTS = 7
 MIN_KEY_POINTS = 5
 BODY_TIMEOUT = 10
 MAX_BODY_CHARS = 3500          # 기사 하나당 AI에 주는 본문 길이
 MIN_BODY_CHARS = 300           # 이보다 짧으면 본문을 못 읽은 것으로 본다(로그인·동의 창 등)
-BATCH_SIZE = 6                 # 한 번의 AI 호출에 넣는 기사 수
+BATCH_SIZE = 3                 # 한 번의 AI 호출에 넣는 기사 수(답이 길어 잘리지 않도록 작게)
+AI_WORKERS = 4                 # AI 호출 동시 실행 수
 BROWSER_UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
               'Chrome/124.0 Safari/537.36')
 USER_AGENT = 'Mozilla/5.0 (compatible; daily-stock-report)'
@@ -188,7 +189,7 @@ def build_prompt(articles: List[Dict], bodies: Optional[Dict[int, str]] = None) 
     bodies = bodies or {}
     lines = [
         '아래 뉴스 각각을 한국어로 요약해 주세요. 영어 기사는 한국어로 옮겨 요약합니다.',
-        '- "본문"이 있는 기사: 중요한 내용을 5~7줄로 요약합니다. 한 줄은 한 문장(최대 150자)이고, '
+        '- "본문"이 있는 기사: 중요한 내용을 5~7줄로 요약합니다. 한 줄은 한 문장(최대 120자)이고, '
         '무슨 일인지·누가·얼마(숫자)·언제·배경·시장/종목에 미치는 쟁점 순으로 씁니다.',
         '- 본문이 없는 기사: 제목과 발췌문이 말하는 내용만 1~2줄로 씁니다(줄 수를 채우려고 지어내지 않습니다).',
         '규칙: 주어진 본문·제목·발췌문에 있는 내용만 쓰고 추측·평가·투자 의견을 넣지 않습니다. 숫자·고유명사는 그대로 둡니다.',
@@ -281,7 +282,7 @@ def _claude_text(prompt: str) -> Optional[str]:
     try:
         body = _post(API_URL, {'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01',
                                'content-type': 'application/json'},
-                     {'model': ANTHROPIC_MODEL, 'max_tokens': 6000,
+                     {'model': ANTHROPIC_MODEL, 'max_tokens': 8000,
                       'messages': [{'role': 'user', 'content': prompt}]})
         return ''.join(b.get('text', '') for b in body.get('content', []))
     except ProviderUnusable as e:
@@ -301,7 +302,7 @@ def _github_models_text(prompt: str) -> Optional[str]:
         try:
             body = _post(url, {'Authorization': f'Bearer {GITHUB_MODELS_TOKEN}', 'Accept': 'application/json',
                                'Content-Type': 'application/json'},
-                         {'model': model, 'max_tokens': 6000, 'temperature': 0.2,
+                         {'model': model, 'max_tokens': 8000, 'temperature': 0.2,
                           'messages': [{'role': 'user', 'content': prompt}]})
             return body['choices'][0]['message']['content']
         except (ProviderUnusable, requests.ConnectionError) as e:
@@ -372,21 +373,26 @@ def add_summaries(groups: List[List[Dict]], fetch_pages: bool = True) -> None:
         logger.info(f"Article text read for {len(bodies)}/{len(everyone)} articles "
                     f"(Google News links: {sum(1 for a in google if id(a) in bodies)}/{len(google)})")
 
-    for group in fresh_groups:
-        for start in range(0, len(group), BATCH_SIZE):
-            chunk = group[start:start + BATCH_SIZE]
-            chunk_bodies = {i: bodies[id(a)] for i, a in enumerate(chunk) if id(a) in bodies}
-            summaries = ai_summaries(chunk, chunk_bodies)
-            for i, article in enumerate(chunk):
-                if summaries:
-                    article['summary'], article['summary_source'] = summaries[i], 'ai'
-                    # 근거를 화면에 표시한다: 기사 본문 / 제목·발췌 / 제목만
-                    article['summary_basis'] = ('body' if i in chunk_bodies
-                                                else 'excerpt' if article.get('snippet') else 'title')
-                elif article.get('snippet'):
-                    article['summary'], article['summary_source'] = clip(article['snippet']), 'snippet'
-                else:
-                    article['summary'], article['summary_source'] = None, None
+    chunks = [group[start:start + BATCH_SIZE] for group in fresh_groups for start in range(0, len(group), BATCH_SIZE)]
+
+    def summarize(chunk):
+        chunk_bodies = {i: bodies[id(a)] for i, a in enumerate(chunk) if id(a) in bodies}
+        return chunk_bodies, ai_summaries(chunk, chunk_bodies)
+
+    with ThreadPoolExecutor(max_workers=AI_WORKERS) as pool:
+        results = list(pool.map(summarize, chunks))
+
+    for chunk, (chunk_bodies, summaries) in zip(chunks, results):
+        for i, article in enumerate(chunk):
+            if summaries:
+                article['summary'], article['summary_source'] = summaries[i], 'ai'
+                # 근거를 화면에 표시한다: 기사 본문 / 제목·발췌 / 제목만
+                article['summary_basis'] = ('body' if i in chunk_bodies
+                                            else 'excerpt' if article.get('snippet') else 'title')
+            elif article.get('snippet'):
+                article['summary'], article['summary_source'] = clip(article['snippet']), 'snippet'
+            else:
+                article['summary'], article['summary_source'] = None, None
 
 
 def add_key_points(materials: Dict[str, Dict]) -> Dict[str, Dict]:

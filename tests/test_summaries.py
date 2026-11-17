@@ -299,7 +299,7 @@ def test_long_groups_are_split_into_batches(monkeypatch):
     monkeypatch.setattr(summarizer, 'ai_summaries', lambda group, bodies=None: sizes.append(len(group)))
     group = [{'title': str(i), 'url': f'u{i}', 'snippet': 's'} for i in range(summarizer.BATCH_SIZE + 2)]
     summarizer.add_summaries([group], fetch_pages=False)
-    assert sizes == [summarizer.BATCH_SIZE, 2]
+    assert sorted(sizes) == sorted([summarizer.BATCH_SIZE, 2])
 
 
 def test_unresolvable_google_link_gives_no_text(monkeypatch):
