@@ -257,6 +257,7 @@ function keyPointsLabel(entry) {
 function summaryLabel(article) {
   if (!article.summary) return '';
   if (article.summary_source !== 'ai') return '기사 발췌';
+  if (article.summary_basis === 'body') return 'AI 요약(기사 본문 기준)';
   return article.summary_basis === 'title' ? 'AI 요약(제목만 근거)' : 'AI 요약(제목·발췌 기준)';
 }
 

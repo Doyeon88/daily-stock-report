@@ -20,7 +20,9 @@ def _article_lines(articles: List[Dict]) -> List[str]:
         text = f"- [{(a.get('published') or '')[:10]}] {a.get('title', '')}"
         if a.get('source'):
             text += f" ({a['source']})"
-        if a.get('snippet'):
+        if a.get('summary') and a.get('summary_source') == 'ai' and a.get('summary_basis') == 'body':
+            text += f" / 본문 요약: {a['summary'].replace(chr(10), ' ')[:700]}"
+        elif a.get('snippet'):
             text += f" / 발췌: {a['snippet'][:300]}"
         lines.append(text)
     return lines

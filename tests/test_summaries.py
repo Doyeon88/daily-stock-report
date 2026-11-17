@@ -219,7 +219,7 @@ def test_article_in_two_groups_is_summarized_once(monkeypatch):
     monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', None)
     shared = {'title': 'a', 'url': 'u', 'snippet': 'x'}
     calls = []
-    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group: calls.append(len(group)))
+    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group, bodies=None: calls.append(len(group)))
     summarizer.add_summaries([[shared], [shared, {'title': 'b', 'url': 'u2', 'snippet': 'y'}]], fetch_pages=False)
     assert calls == [1, 1]   # the shared article is not part of the second call
 
@@ -230,10 +230,10 @@ def test_parse_ai_list_accepts_any_length():
     assert summarizer.parse_ai_list('[1]') is None
 
 
-def test_key_points_use_ai_and_cap_at_five(monkeypatch):
+def test_key_points_use_ai_and_cap_at_seven(monkeypatch):
     monkeypatch.setattr(summarizer, 'ai_text', lambda prompt: '["1","2","3","4","5","6","7"]')
     result = summarizer.add_key_points({'BE': {'text': '자료', 'fallback': ['수치']}})
-    assert result['BE'] == {'points': ['1', '2', '3', '4', '5'], 'source': 'ai'}
+    assert result['BE'] == {'points': ['1', '2', '3', '4', '5', '6', '7'], 'source': 'ai'}
 
 
 def test_key_points_fall_back_to_the_numbers(monkeypatch):
@@ -256,3 +256,53 @@ def test_unresolvable_endpoint_is_marked_unusable(monkeypatch):
     assert summarizer._github_models_text('p') is None
     assert summarizer._github_models_text('p') is None
     assert post.call_count == len(summarizer.GITHUB_MODELS_ENDPOINTS)   # each endpoint is tried once per run
+
+
+def test_extract_article_text_keeps_paragraphs_and_skips_menus():
+    long1 = 'Bloom Energy said orders doubled in the quarter, driven by data center demand across the country. '
+    long2 = 'The company also raised its full year revenue guidance and expects margins to expand next year as well.'
+    page = ('<nav><p>' + 'menu ' * 30 + '</p></nav><script>var x;</script>'
+            f'<article><p>{long1}</p><p>short</p><p>{long2}</p><p>{long2 * 2}</p><p>{long1}</p></article><footer><p>{long1}</p></footer>')
+    text = summarizer.extract_article_text(page, limit=1000)
+    assert text.count('orders doubled') == 1 and 'menu' not in text and 'guidance' in text
+    assert summarizer.extract_article_text('<p>too short to be an article</p>') == ''
+
+
+def test_prompt_asks_for_five_lines_when_the_body_is_known():
+    prompt = summarizer.build_prompt([{'title': 'T1', 'snippet': ''}, {'title': 'T2', 'snippet': 'S2'}], {0: 'BODY TEXT'})
+    assert '본문: BODY TEXT' in prompt and '5~7줄' in prompt
+    assert prompt.count('본문:') == 1
+
+
+def test_parse_summaries_turns_line_lists_into_bullets():
+    parsed = summarizer.parse_ai_summaries('[["가", "나", "다"], "한 줄"]', 2)
+    assert parsed == ['• 가\n• 나\n• 다', '한 줄']
+    assert summarizer.parse_ai_summaries('[["가"], 3]', 2) is None
+    assert summarizer.parse_ai_summaries('[["가"]]', 1) == ['가']
+
+
+def test_body_based_summary_is_marked_and_not_published(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', 'k')
+    monkeypatch.setattr(summarizer, 'fetch_article_text', lambda url: 'FULL TEXT' if url == 'u1' else '')
+    monkeypatch.setattr(summarizer, 'fetch_page_description', lambda url: '')
+    seen = {}
+    monkeypatch.setattr(summarizer, 'ai_text', lambda prompt: seen.setdefault('p', prompt) and '[["가", "나", "다", "라", "마"], ["제목 요약"]]')
+    group = [{'title': 'a', 'url': 'u1', 'snippet': ''}, {'title': 'b', 'url': 'u2', 'snippet': ''}]
+    summarizer.add_summaries([group])
+    assert [a['summary_basis'] for a in group] == ['body', 'title']
+    assert group[0]['summary'].count('•') == 5
+    assert 'body' not in group[0] and 'FULL TEXT' in seen['p']
+
+
+def test_long_groups_are_split_into_batches(monkeypatch):
+    sizes = []
+    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group, bodies=None: sizes.append(len(group)))
+    group = [{'title': str(i), 'url': f'u{i}', 'snippet': 's'} for i in range(summarizer.BATCH_SIZE + 2)]
+    summarizer.add_summaries([group], fetch_pages=False)
+    assert sizes == [summarizer.BATCH_SIZE, 2]
+
+
+def test_unresolvable_google_link_gives_no_text(monkeypatch):
+    monkeypatch.setattr(summarizer.requests, 'get', MagicMock(side_effect=RuntimeError('429')))
+    assert summarizer.resolve_google_news_url('https://news.google.com/rss/articles/AbC?oc=5') == ''
+    assert summarizer.fetch_article_text('https://news.google.com/rss/articles/AbC?oc=5') == ''
