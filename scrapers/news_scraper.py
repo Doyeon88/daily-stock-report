@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 15
 MAX_TITLE_LENGTH = 140
 MAX_SNIPPET_LENGTH = 600
-ANALYST_LOOKBACK_DAYS = 14
+ANALYST_LOOKBACK_DAYS = 30
 
 
 def _finnhub_news(ticker: str, now: datetime) -> List[Dict]:
@@ -155,7 +155,7 @@ ANALYST_WORDS = (
     'reiterate', 'reiterates', 'rating', 'overweight', 'outperform', 'underperform', 'coverage', 'raises pt',
     'lowers pt', 'cuts pt', 'buy rating', 'sell rating', 'top pick',
 )
-ANALYST_LIMIT = 12   # 후보 수: 본문을 읽을 수 있고 5줄 이상 요약되는 최신 3개만 화면에 남긴다(main.py)
+ANALYST_LIMIT = 16   # 후보 수: 본문을 읽을 수 있고 5줄 이상 요약되는 최신 3개만 화면에 남긴다(main.py)
 
 
 def is_analyst_article(title: str) -> bool:
