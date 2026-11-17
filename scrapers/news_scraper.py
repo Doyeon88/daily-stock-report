@@ -14,6 +14,7 @@ from email.utils import parsedate_to_datetime
 from typing import Dict, List, Optional
 
 import requests
+import yfinance as yf
 
 from config import FINNHUB_API_KEY, NEWS_LIMIT, NEWS_LOOKBACK_DAYS, STOCK_NAMES
 from scrapers.retry import call_with_retry
@@ -45,6 +46,38 @@ def _finnhub_news(ticker: str, now: datetime) -> List[Dict]:
         for article in response.json()
         if article.get('headline') and article.get('url') and article.get('datetime')
     ]
+
+
+def _yahoo_published(content: Dict, item: Dict) -> Optional[datetime]:
+    raw = content.get('pubDate') or content.get('displayTime')
+    if raw:
+        try:
+            return datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+        except ValueError:
+            pass
+    epoch = item.get('providerPublishTime')
+    return datetime.fromtimestamp(epoch, tz=timezone.utc) if epoch else None
+
+
+def _yahoo_news(ticker: str, now: datetime) -> List[Dict]:
+    """Yahoo Finance's news list (yfinance): real article links and Yahoo's own one-paragraph summary"""
+    articles = []
+    for item in yf.Ticker(ticker).news or []:
+        content = item.get('content') or item
+        title = (content.get('title') or '').strip()
+        url_info = content.get('canonicalUrl') or content.get('clickThroughUrl') or {}
+        url = url_info.get('url') if isinstance(url_info, dict) else None
+        url = url or item.get('link')
+        published = _yahoo_published(content, item)
+        provider = content.get('provider')
+        source = (provider.get('displayName') if isinstance(provider, dict) else None) or item.get('publisher')
+        raw_snippet = content.get('summary') or content.get('description') or ''
+        if title and url and published:
+            articles.append({
+                'title': title, 'source': source, 'url': url, 'published': published,
+                'snippet': _rss_snippet(raw_snippet, title),
+            })
+    return articles
 
 
 def _rss_snippet(description, title: str) -> str:
@@ -90,21 +123,25 @@ def google_news_query(query: str, now: datetime, lookback_days: int = NEWS_LOOKB
 def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBACK_DAYS) -> List[Dict]:
     """Keep recent articles, drop duplicate titles (keeping the first seen), newest first, capped"""
     cutoff = now - timedelta(days=lookback_days)
-    seen, merged = set(), []
+    positions, merged = {}, []
     for article in sorted(
         (a for a in articles if a['published'] >= cutoff), key=lambda a: a['published'], reverse=True
     ):
         key = re.sub(r'[^a-z0-9]+', '', article['title'].lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append({
+        entry = {
             'title': article['title'][:MAX_TITLE_LENGTH],
             'source': article['source'],
             'url': article['url'],
             'published': article['published'].astimezone(timezone.utc).isoformat(timespec='minutes'),
             'snippet': (article.get('snippet') or '')[:MAX_SNIPPET_LENGTH],
-        })
+        }
+        if key in positions:
+            # Same headline from two sources: keep the position but prefer the copy that has an excerpt
+            if not merged[positions[key]]['snippet'] and entry['snippet']:
+                merged[positions[key]] = entry
+            continue
+        positions[key] = len(merged)
+        merged.append(entry)
     return merged[:NEWS_LIMIT]
 
 
@@ -120,7 +157,7 @@ def fetch_news(tickers: List[str], now: Optional[datetime] = None) -> Dict[str, 
         dict: ticker -> list of {'title', 'source', 'url', 'published' (ISO, UTC)}, newest first
     """
     now = now or datetime.now(timezone.utc)
-    sources = [('Google News', _google_news)]
+    sources = [('Google News', _google_news), ('Yahoo Finance', _yahoo_news)]
     if FINNHUB_API_KEY:
         sources.insert(0, ('Finnhub', _finnhub_news))
     logger.info(f"Fetching news for {len(tickers)} ticker(s) from: {[name for name, _ in sources]}")

@@ -31,6 +31,12 @@ FINNHUB = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def no_yahoo(monkeypatch):
+    """The Yahoo source would hit the network; tests that want it patch _yahoo_news themselves"""
+    monkeypatch.setattr(news_scraper, '_yahoo_news', lambda ticker, now: [])
+
+
 def _response(content=b'', payload=None):
     response = MagicMock()
     response.content = content
@@ -112,3 +118,28 @@ def test_every_source_failing_gives_an_empty_list_not_an_exception(monkeypatch):
     monkeypatch.setattr(news_scraper.requests, 'get', MagicMock(side_effect=ConnectionError('down')))
 
     assert news_scraper.fetch_news(['BE', 'CRCL'], now=NOW) == {'BE': [], 'CRCL': []}
+
+
+def test_yahoo_news_has_real_links_and_summary(monkeypatch):
+    class FakeTicker:
+        news = [
+            {'content': {'title': 'Bloom wins deal', 'summary': 'Bloom Energy signed a $1B supply deal.',
+                         'pubDate': '2026-10-27T04:00:00Z', 'provider': {'displayName': 'Reuters'},
+                         'canonicalUrl': {'url': 'https://reuters.example/a'}}},
+            {'content': {'title': 'No link'}},
+        ]
+    monkeypatch.undo()   # drop the autouse stub so the real function runs
+    monkeypatch.setattr(news_scraper.yf, 'Ticker', lambda t: FakeTicker())
+    articles = news_scraper._yahoo_news('BE', NOW)
+    assert len(articles) == 1
+    assert articles[0]['url'] == 'https://reuters.example/a' and articles[0]['source'] == 'Reuters'
+    assert articles[0]['snippet'] == 'Bloom Energy signed a $1B supply deal.'
+
+
+def test_duplicate_headline_keeps_the_copy_with_an_excerpt():
+    base = {'title': 'Bloom Wins Deal', 'source': 's', 'published': NOW}
+    merged = news_scraper._merge([
+        dict(base, url='https://google.example/x', snippet=''),
+        dict(base, url='https://yahoo.example/x', snippet='Excerpt text'),
+    ], NOW)
+    assert len(merged) == 1 and merged[0]['url'] == 'https://yahoo.example/x' and merged[0]['snippet'] == 'Excerpt text'

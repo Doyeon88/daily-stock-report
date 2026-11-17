@@ -239,7 +239,8 @@ function formatReportItems(analystEntry, filingInfo) {
 
 function summaryLabel(article) {
   if (!article.summary) return '';
-  return article.summary_source === 'ai' ? 'AI 요약(제목·발췌 기준)' : '기사 발췌';
+  if (article.summary_source !== 'ai') return '기사 발췌';
+  return article.summary_basis === 'title' ? 'AI 요약(제목만 근거)' : 'AI 요약(제목·발췌 기준)';
 }
 
 // ---------- 화면 만들기 (값은 모두 textContent 로 넣어 HTML 이 끼어들 수 없게 합니다) ----------

@@ -145,3 +145,26 @@ def test_both_providers_failing_gives_the_excerpt(monkeypatch):
     group = [{'title': 'a', 'url': 'u', 'snippet': 'excerpt'}]
     summarizer.add_summaries([group], fetch_pages=False)
     assert (group[0]['summary'], group[0]['summary_source']) == ('excerpt', 'snippet')
+
+
+def test_summary_basis_tells_title_only_from_excerpt(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', 'k')
+    response = MagicMock()
+    response.json.return_value = {'content': [{'type': 'text', 'text': '["가", "나"]'}]}
+    monkeypatch.setattr(summarizer.requests, 'post', MagicMock(return_value=response))
+    group = [{'title': 'a', 'url': 'u', 'snippet': 'has excerpt'}, {'title': 'b', 'url': 'u2', 'snippet': ''}]
+    summarizer.add_summaries([group], fetch_pages=False)
+    assert [a['summary_basis'] for a in group] == ['excerpt', 'title']
+
+
+def test_non_json_body_is_reported_with_status_and_start(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', None)
+    monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', 'ghs')
+    response = MagicMock(status_code=200, text='<html>login</html>', history=[])
+    response.headers = {'Content-Type': 'text/html'}
+    response.json.side_effect = ValueError('Expecting value')
+    monkeypatch.setattr(summarizer.requests, 'post', MagicMock(return_value=response))
+    messages = []
+    monkeypatch.setattr(summarizer.logger, 'error', lambda m: messages.append(m))
+    assert summarizer._github_models_summaries([{'title': 'a'}]) is None
+    assert 'HTTP 200' in messages[0] and 'text/html' in messages[0] and '<html>login' in messages[0]

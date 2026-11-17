@@ -92,6 +92,17 @@ def parse_ai_summaries(text: str, expected: int) -> Optional[List[str]]:
     return [clip(x) for x in data]
 
 
+def _json_body(response) -> Dict:
+    """response.json(), but a body that is not JSON is reported with its status and start (for the Actions log)"""
+    try:
+        return response.json()
+    except ValueError:
+        redirects = [r.status_code for r in getattr(response, 'history', [])]
+        raise ValueError(
+            f"not JSON: HTTP {response.status_code}, content-type {response.headers.get('Content-Type')}, "
+            f"redirects {redirects}, body starts {response.text[:200]!r}")
+
+
 def _claude_summaries(articles: List[Dict]) -> Optional[List[str]]:
     if not ANTHROPIC_API_KEY:
         return None
@@ -105,7 +116,7 @@ def _claude_summaries(articles: List[Dict]) -> Optional[List[str]]:
             timeout=API_TIMEOUT,
         )
         response.raise_for_status()
-        text = ''.join(b.get('text', '') for b in response.json().get('content', []))
+        text = ''.join(b.get('text', '') for b in _json_body(response).get('content', []))
         return parse_ai_summaries(text, len(articles))
     except Exception as e:
         logger.error(f"Claude summaries unavailable: {e}")
@@ -118,14 +129,14 @@ def _github_models_summaries(articles: List[Dict]) -> Optional[List[str]]:
     try:
         response = requests.post(
             GITHUB_MODELS_URL,
-            headers={'Authorization': f'Bearer {GITHUB_MODELS_TOKEN}', 'Accept': 'application/vnd.github+json',
+            headers={'Authorization': f'Bearer {GITHUB_MODELS_TOKEN}', 'Accept': 'application/json',
                      'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json'},
             json={'model': GITHUB_MODELS_MODEL, 'max_tokens': 1500, 'temperature': 0.2,
                   'messages': [{'role': 'user', 'content': build_prompt(articles)}]},
             timeout=API_TIMEOUT,
         )
         response.raise_for_status()
-        text = response.json()['choices'][0]['message']['content']
+        text = _json_body(response)['choices'][0]['message']['content']
         return parse_ai_summaries(text, len(articles))
     except Exception as e:
         logger.error(f"GitHub Models summaries unavailable: {e}")
@@ -159,6 +170,8 @@ def add_summaries(groups: List[List[Dict]], fetch_pages: bool = True) -> None:
         for i, article in enumerate(group):
             if summaries:
                 article['summary'], article['summary_source'] = summaries[i], 'ai'
+                # 발췌문이 없으면 제목만 보고 쓴 요약이므로 화면에 그렇게 표시한다
+                article['summary_basis'] = 'excerpt' if article.get('snippet') else 'title'
             elif article.get('snippet'):
                 article['summary'], article['summary_source'] = clip(article['snippet']), 'snippet'
             else:
