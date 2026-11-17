@@ -155,7 +155,7 @@ ANALYST_WORDS = (
     'reiterate', 'reiterates', 'rating', 'overweight', 'outperform', 'underperform', 'coverage', 'raises pt',
     'lowers pt', 'cuts pt', 'buy rating', 'sell rating', 'top pick',
 )
-ANALYST_LIMIT = 5
+ANALYST_LIMIT = 12   # 후보 수: 본문을 읽을 수 있고 5줄 이상 요약되는 최신 3개만 화면에 남긴다(main.py)
 
 
 def is_analyst_article(title: str) -> bool:

@@ -124,7 +124,7 @@ def test_google_fills_up_when_the_primary_sources_give_too_few(monkeypatch):
 
 
 def test_google_analyst_search_is_skipped_when_excerpt_articles_suffice(monkeypatch):
-    analysts = [_art(i, f'Bank {i} raises price target', 1 + i * 0.01, 'excerpt') for i in range(5)]
+    analysts = [_art(i, f'Bank {i} raises price target', 1 + i * 0.01, 'excerpt') for i in range(news_scraper.ANALYST_LIMIT)]
     analyst_google = MagicMock(return_value=[])
     monkeypatch.setattr(news_scraper, '_primary_sources', lambda: [('Yahoo', lambda t, n: analysts)])
     monkeypatch.setattr(news_scraper, '_google_news', MagicMock(return_value=[]))
@@ -133,4 +133,4 @@ def test_google_analyst_search_is_skipped_when_excerpt_articles_suffice(monkeypa
     bundle = news_scraper.fetch_news_bundle(['BE'], NOW)
 
     analyst_google.assert_not_called()
-    assert len(bundle['analyst']['BE']) == 5
+    assert len(bundle['analyst']['BE']) == news_scraper.ANALYST_LIMIT

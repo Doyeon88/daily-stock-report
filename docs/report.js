@@ -215,6 +215,20 @@ function formatNews(article) {
   };
 }
 
+// 오늘의 헤드라인 한 건: 분류·한글 제목·핵심 이유·출처/시각·본문 요약(있을 때)
+function formatHeadline(h) {
+  const original = h.title && h.title !== h.headline ? '원문: ' + String(h.title) : '';
+  return {
+    category: String(h.category || ''),
+    text: String(h.headline || h.title || ''),
+    why: h.why ? String(h.why) : '',
+    url: safeUrl(h.url),
+    meta: [h.source, formatNewsTime(h.published), '?미검증', original].filter(Boolean).join(' · '),
+    summary: h.summary || '',
+    label: summaryLabel(h),
+  };
+}
+
 // 리포트 목록: 애널리스트 리포트 기사(링크+요약), 의견·목표가 변경(Yahoo 집계, 분석 페이지 링크), 공시를 날짜순으로 합칩니다.
 // 증권사 리포트 원문은 가져올 수 없어 기사 제목·발췌 범위의 요약입니다. 공시 본문은 읽지 않아 공시 요약은 양식 설명입니다.
 function formatReportItems(analystEntry, filingInfo, ticker, analystArticles) {
@@ -291,6 +305,28 @@ function renderReport(doc, data) {
   const marketBox = doc.getElementById('market');
   for (const m of market) {
     marketBox.appendChild(element('span', 'chip ' + toneOf(m.change_percent), m.name + ' ' + signed(m.change_percent)));
+  }
+
+  // 오늘의 헤드라인(가장 먼저 읽는 속보 3~5개)
+  const headlineBox = doc.getElementById('headlines');
+  if (headlineBox && (data.headlines || []).length) {
+    headlineBox.hidden = false;
+    const ul = doc.getElementById('headline-list');
+    for (const h of data.headlines) {
+      const f = formatHeadline(h);
+      const li = element('li', '');
+      if (f.category) li.appendChild(element('span', 'cat', f.category));
+      if (f.url) li.appendChild(link(f.text, f.url)); else li.appendChild(element('span', '', f.text));
+      if (f.why) li.appendChild(element('div', 'why', f.why));
+      li.appendChild(element('div', 'meta', f.meta));
+      if (f.summary) {
+        const details = element('details', 'more');
+        details.appendChild(element('summary', '', '자세히 보기 · ' + f.label));
+        details.appendChild(element('div', 'summary', f.summary));
+        li.appendChild(details);
+      }
+      ul.appendChild(li);
+    }
   }
 
   // 오늘의 신호
@@ -505,7 +541,7 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined') {
   module.exports = {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
-    formatFiling, formatNews, formatNewsTime, renderReport, DATA_URL_PREFIX,
+    formatFiling, formatNews, formatNewsTime, formatHeadline, renderReport, DATA_URL_PREFIX,
     formatValuation, formatAnalyst, formatHolder, formatCalendarItem, formatPortfolio, formatReportItems, keyPointsLabel,
     summaryLabel, classTag: tagTone,
   };

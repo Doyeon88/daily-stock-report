@@ -215,3 +215,10 @@ NEWSAPI_RATE_LIMIT = 100
 # Timezone
 # ============================================
 TIMEZONE = 'Asia/Seoul'  # 한국 표준시
+
+# 오늘의 헤드라인(전체 탭 맨 위): 시황·경제·원자재·여론·정치 중 주가에 영향을 줄 속보
+HEADLINE_MIN = 3
+HEADLINE_MAX = 5
+HEADLINE_LOOKBACK_HOURS = 24
+# 리포트(애널리스트 기사): 5줄 이상 요약되는 최신 N개만 남김
+ANALYST_REPORTS_PER_TICKER = 3

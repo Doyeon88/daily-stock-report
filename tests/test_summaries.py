@@ -13,6 +13,7 @@ from scrapers import news_scraper, sec_filings, summarizer
 @pytest.fixture(autouse=True)
 def fresh_provider_state(monkeypatch):
     monkeypatch.setattr(summarizer, '_unusable', set())
+    monkeypatch.setattr(summarizer, '_text_cache', {})
 
 
 def test_parse_page_description_prefers_og_and_unescapes():
@@ -306,3 +307,29 @@ def test_unresolvable_google_link_gives_no_text(monkeypatch):
     monkeypatch.setattr(summarizer.requests, 'get', MagicMock(side_effect=RuntimeError('429')))
     assert summarizer.resolve_google_news_url('https://news.google.com/rss/articles/AbC?oc=5') == ''
     assert summarizer.fetch_article_text('https://news.google.com/rss/articles/AbC?oc=5') == ''
+
+
+def test_keep_readable_keeps_newest_readable_articles(monkeypatch):
+    texts = {'u1': '', 'u2': 'text', 'u3': 'text', 'u4': 'text'}
+    monkeypatch.setattr(summarizer, '_read_article_text', lambda url: texts[url])
+    articles = [{'url': u} for u in ('u1', 'u2', 'u3', 'u4')]
+    assert [a['url'] for a in summarizer.keep_readable(articles, 2)] == ['u2', 'u3']
+    assert summarizer.keep_readable([], 3) == []
+
+
+def test_page_is_read_once_per_run(monkeypatch):
+    calls = []
+    monkeypatch.setattr(summarizer, '_read_article_text', lambda url: calls.append(url) or 'text')
+    summarizer.fetch_article_text('u1')
+    summarizer.fetch_article_text('u1')
+    assert calls == ['u1']
+
+
+def test_reports_need_five_summary_lines_from_the_article_text():
+    def article(lines, basis='body', source='ai'):
+        return {'summary': '\n'.join('• x' for _ in range(lines)), 'summary_basis': basis, 'summary_source': source}
+    short, title_only, snippet, good1, good2, good3 = (
+        article(4), article(6, basis='title'), article(6, source='snippet'), article(5), article(7), article(6))
+    kept = summarizer.top_with_full_summary([short, title_only, snippet, good1, good2, good3], 2)
+    assert kept == [good1, good2]
+    assert summarizer.summary_lines({'summary': None}) == 0

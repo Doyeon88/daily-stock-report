@@ -18,7 +18,7 @@ from config import (
     LOG_LEVEL, LOG_FILE, LOG_FORMAT, DATA_DIR,
     STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE,
     ENABLE_FCM_NOTIFICATION, SCENARIO_EPS, SCENARIO_NOTES, VALUATION_MULTIPLES, USER_EVENTS, CHECKLIST,
-    PORTFOLIO, PORTFOLIO_PUBLISH_AMOUNTS
+    PORTFOLIO, PORTFOLIO_PUBLISH_AMOUNTS, HEADLINE_MIN, HEADLINE_MAX, ANALYST_REPORTS_PER_TICKER
 )
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ def main():
     try:
         # Import data collectors, processors and notifications
         from scrapers import (
-            analyst_changes, competitor_scraper, institutional, news_scraper, policy_tracker,
+            analyst_changes, competitor_scraper, headlines, institutional, news_scraper, policy_tracker,
             sec_filings, stock_details, summarizer, yfinance_scraper
         )
         from processors import calendar_events, key_points, portfolio, report_generator, tagging, valuation
@@ -90,9 +90,21 @@ def main():
             "News", lambda: news_scraper.fetch_news_bundle(STOCKS_TO_TRACK), {'news': {}, 'analyst': {}})
         news, analyst_articles = bundle.get('news', {}), bundle.get('analyst', {})
         logger.info(f"- {sum(len(items) for items in news.values())} headline(s)")
+        # 리포트(애널리스트 기사): 본문을 읽을 수 있는 최신 후보만 요약하고, 5줄 이상 요약되는 최신 3개만 남긴다
+        def prepare_reports():
+            spare = ANALYST_REPORTS_PER_TICKER + 2
+            for ticker in list(analyst_articles):
+                analyst_articles[ticker] = summarizer.keep_readable(analyst_articles[ticker], spare)
+        _collect_optional("Readable analyst reports", prepare_reports, None)
         _collect_optional(
             "News summaries",
             lambda: summarizer.add_summaries(list(news.values()) + list(analyst_articles.values())), None)
+
+        def trim_reports():
+            for ticker in list(analyst_articles):
+                analyst_articles[ticker] = summarizer.top_with_full_summary(
+                    analyst_articles[ticker], ANALYST_REPORTS_PER_TICKER)
+        _collect_optional("Analyst report selection", trim_reports, None)
 
         logger.info("Step 4: Collecting SEC filings...")
         filings = _collect_optional(
@@ -112,6 +124,12 @@ def main():
         policy = _collect_optional("Policy news", policy_tracker.fetch_policy_news, [])
         _collect_optional(
             "Policy summaries", lambda: summarizer.add_summaries([g['articles'] for g in policy]), None)
+
+        logger.info("Step 5c: Today's headlines (market, economy, commodities, sentiment, politics)...")
+        headline_list = _collect_optional(
+            "Headlines", lambda: headlines.select_headlines(headlines.fetch_candidates(), minimum=HEADLINE_MIN,
+                                                            maximum=HEADLINE_MAX), [])
+        logger.info(f"- {len(headline_list)} headline(s)")
 
         # Local calculations (no network): calendar, valuation vs. scenario EPS, portfolio, checklist
         today = datetime.now(pytz.timezone(TIMEZONE)).date()
@@ -138,6 +156,7 @@ def main():
         extras = {
             'analyst_articles': {t: tagging.tag_news(items) for t, items in analyst_articles.items()},
             'key_points': points,
+            'headlines': headline_list,
             'analyst': analyst, 'institutional': holders, 'policy': policy, 'calendar': calendar,
             'valuation': valuations,
             'portfolio': portfolio_result,   # 금액 포함: 로컬 출력용, 저장소에는 올리지 않는다

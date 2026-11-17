@@ -10,7 +10,7 @@ import pytest
 import main
 from notifications import fcm_notifier, report_publisher
 from scrapers import (
-    analyst_changes, competitor_scraper, institutional, news_scraper, policy_tracker,
+    analyst_changes, competitor_scraper, headlines, institutional, news_scraper, policy_tracker,
     sec_filings, stock_details, summarizer, yfinance_scraper
 )
 
@@ -22,6 +22,10 @@ OPTIONAL_COLLECTORS = (
     (analyst_changes, 'fetch_analyst_changes', {}),
     (institutional, 'fetch_institutional', {}),
     (policy_tracker, 'fetch_policy_news', []),
+    (headlines, 'fetch_candidates', []),
+    (headlines, 'select_headlines', []),
+    (summarizer, 'keep_readable', []),
+    (summarizer, 'top_with_full_summary', []),
     (summarizer, 'add_summaries', None),
     (summarizer, 'add_key_points', {}),
 )

@@ -157,8 +157,17 @@ def resolve_google_news_url(url: str) -> str:
         return ''
 
 
+_text_cache: Dict[str, str] = {}   # url -> article text: a page is read once per run
+
+
 def fetch_article_text(url: str) -> str:
     """Best effort: the article's text, '' when the site blocks us, is paywalled or has no readable text"""
+    if url not in _text_cache:
+        _text_cache[url] = _read_article_text(url)
+    return _text_cache[url]
+
+
+def _read_article_text(url: str) -> str:
     try:
         if 'news.google.com' in (url or ''):
             url = resolve_google_news_url(url)
@@ -393,6 +402,28 @@ def add_summaries(groups: List[List[Dict]], fetch_pages: bool = True) -> None:
                 article['summary'], article['summary_source'] = clip(article['snippet']), 'snippet'
             else:
                 article['summary'], article['summary_source'] = None, None
+
+
+def keep_readable(articles: List[Dict], keep: int) -> List[Dict]:
+    """The first `keep` articles (newest first, as given) whose page text can be read"""
+    if not articles:
+        return []
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        texts = list(pool.map(lambda a: fetch_article_text(a.get('url') or ''), articles))
+    return [a for a, text in zip(articles, texts) if text][:keep]
+
+
+def summary_lines(article: Dict) -> int:
+    """Number of lines in an article's summary (bullet lines separated by newlines)"""
+    summary = article.get('summary') or ''
+    return len([line for line in summary.split('\n') if line.strip()])
+
+
+def top_with_full_summary(articles: List[Dict], keep: int, min_lines: int = MIN_KEY_POINTS) -> List[Dict]:
+    """The first `keep` articles with an AI summary of the article text that has at least `min_lines` lines"""
+    good = [a for a in articles
+            if a.get('summary_source') == 'ai' and a.get('summary_basis') == 'body' and summary_lines(a) >= min_lines]
+    return good[:keep]
 
 
 def add_key_points(materials: Dict[str, Dict]) -> Dict[str, Dict]:
