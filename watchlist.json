@@ -3,23 +3,99 @@
   "report_time": "07:00",
   "report_days": "tue-sat",
   "tickers": [
-    {"symbol": "BE",   "name": "Bloom Energy",          "competitors": ["FCEL", "PLUG", "CAT"]},
-    {"symbol": "EROC", "name": "ERock",                  "competitors": ["CAT", "BE", "FPS"],
-     "scenario_eps": {"2027": 0.65, "2028": 1.5, "2029": 2.5},
-     "scenario_note": "사용자 시나리오(제 추정). 27년 컨센 근접, 28·29년은 가정"},
-    {"symbol": "INIO", "name": "INNIO",                 "competitors": ["CAT", "EROC"]},
-    {"symbol": "CAT",  "name": "Caterpillar",            "competitors": ["BE", "EROC"]},
-    {"symbol": "FPS",  "name": "Forgent Power Solutions", "competitors": ["GEV", "VRT"]},
-    {"symbol": "NBIS", "name": "Nebius Group",           "competitors": ["CRWV", "ORCL"]},
-    {"symbol": "CRCL", "name": "Circle Internet Group",  "competitors": ["COIN", "PYPL"]},
-    {"symbol": "BWXT", "name": "BWX Technologies",       "competitors": ["RTX", "LMT", "NOC"]}
+    {
+      "symbol": "BE",
+      "name": "Bloom Energy",
+      "competitors": [
+        "FCEL",
+        "PLUG",
+        "CAT"
+      ]
+    },
+    {
+      "symbol": "EROC",
+      "name": "ERock",
+      "competitors": [
+        "CAT",
+        "BE",
+        "FPS"
+      ],
+      "scenario_eps": {
+        "2027": 0.65,
+        "2028": 1.5,
+        "2029": 2.5
+      },
+      "scenario_note": "사용자 시나리오(제 추정). 27년 컨센 근접, 28·29년은 가정"
+    },
+    {
+      "symbol": "INIO",
+      "name": "INNIO",
+      "competitors": [
+        "CAT",
+        "EROC"
+      ]
+    },
+    {
+      "symbol": "CAT",
+      "name": "Caterpillar",
+      "competitors": [
+        "BE",
+        "EROC"
+      ]
+    },
+    {
+      "symbol": "FPS",
+      "name": "Forgent Power Solutions",
+      "competitors": [
+        "GEV",
+        "VRT"
+      ]
+    },
+    {
+      "symbol": "NBIS",
+      "name": "Nebius Group",
+      "competitors": [
+        "CRWV",
+        "ORCL"
+      ]
+    },
+    {
+      "symbol": "CRCL",
+      "name": "Circle Internet Group",
+      "competitors": [
+        "COIN",
+        "PYPL"
+      ]
+    },
+    {
+      "symbol": "BWXT",
+      "name": "BWX Technologies",
+      "competitors": [
+        "RTX",
+        "LMT",
+        "NOC"
+      ]
+    }
   ],
   "market_context": [
-    {"symbol": "^GSPC", "name": "S&P 500"},
-    {"symbol": "^IXIC", "name": "Nasdaq"},
-    {"symbol": "BTC-USD", "name": "Bitcoin"}
+    {
+      "symbol": "^GSPC",
+      "name": "S&P 500"
+    },
+    {
+      "symbol": "^IXIC",
+      "name": "Nasdaq"
+    },
+    {
+      "symbol": "BTC-USD",
+      "name": "Bitcoin"
+    }
   ],
-  "valuation_multiples": [20, 30, 40],
+  "valuation_multiples": [
+    20,
+    30,
+    40
+  ],
   "policy_queries": [
     "data center permitting bill Senate",
     "behind-the-meter power data center regulation",
@@ -27,10 +103,32 @@
     "FERC large load interconnection"
   ],
   "events": [
-    {"date": "2026-11-17", "label": "Nvidia 실적 발표 (ET)", "tickers": [], "verified": false},
-    {"date": "2026-11-18", "label": "Anthropic IPO 가격 결정(보도 기준)", "tickers": [], "verified": false},
-    {"date": "2026-11-19", "label": "Anthropic 거래 개시(보도 기준)", "tickers": [], "verified": false},
-    {"date": "2026-12-07", "label": "EROC 락업 해제", "tickers": ["EROC"], "verified": false}
+    {
+      "date": "2026-11-17",
+      "label": "Nvidia 실적 발표 (ET)",
+      "tickers": [],
+      "verified": false
+    },
+    {
+      "date": "2026-11-18",
+      "label": "Anthropic IPO 가격 결정(보도 기준)",
+      "tickers": [],
+      "verified": false
+    },
+    {
+      "date": "2026-11-19",
+      "label": "Anthropic 거래 개시(보도 기준)",
+      "tickers": [],
+      "verified": false
+    },
+    {
+      "date": "2026-12-07",
+      "label": "EROC 락업 해제",
+      "tickers": [
+        "EROC"
+      ],
+      "verified": false
+    }
   ],
   "checklist": {
     "EROC": [
@@ -39,7 +137,13 @@
       "락업 해제(12/7) 전후 거래량·공매도",
       "13D/G·13F 기관 보유 변화(원문 확인)"
     ],
-    "BE": ["BTM 신규 계약·선수금", "13F 보유 변화는 지연 데이터임을 감안"],
-    "NBIS": ["데이터센터 전력 공급 지연과 가이던스 하단 관련 언급"]
+    "BE": [
+      "BTM 신규 계약·선수금",
+      "13F 보유 변화는 지연 데이터임을 감안",
+      "CloudBurst/Evolve San Marcos 허가의 설비 내역(TCEQ 원문)과 블룸 공식 확인 — 블룸 975 MW 수주는 미확인(SNS 글 기준)"
+    ],
+    "NBIS": [
+      "데이터센터 전력 공급 지연과 가이던스 하단 관련 언급"
+    ]
   }
 }
