@@ -132,13 +132,13 @@ def _json_body(response) -> Dict:
         redirects = [r.status_code for r in getattr(response, 'history', [])]
         raise ProviderUnusable(
             f"not JSON: HTTP {response.status_code}, content-type {response.headers.get('Content-Type')}, "
-            f"redirects {redirects}, body starts {response.text[:200]!r}")
+            f"redirects {redirects}, body starts {response.text[:300]!r}")
 
 
 def _post(url: str, headers: Dict, payload: Dict) -> Dict:
     response = requests.post(url, headers=headers, json=payload, timeout=API_TIMEOUT)
-    if response.status_code in (401, 403, 404):
-        raise ProviderUnusable(f"HTTP {response.status_code}: {response.text[:200]!r}")
+    if response.status_code in (400, 401, 403, 404):
+        raise ProviderUnusable(f"HTTP {response.status_code}: {response.text[:300]!r}")
     response.raise_for_status()
     return _json_body(response)
 
