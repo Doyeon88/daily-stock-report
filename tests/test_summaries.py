@@ -10,6 +10,11 @@ from processors import tagging
 from scrapers import news_scraper, sec_filings, summarizer
 
 
+@pytest.fixture(autouse=True)
+def fresh_provider_state(monkeypatch):
+    monkeypatch.setattr(summarizer, '_unusable', set())
+
+
 def test_parse_page_description_prefers_og_and_unescapes():
     page = '<head><meta property="og:description" content="Bloom &amp; Co wins a $1B deal"><meta name="description" content="other"></head>'
     assert summarizer.parse_page_description(page) == 'Bloom & Co wins a $1B deal'
@@ -166,5 +171,78 @@ def test_non_json_body_is_reported_with_status_and_start(monkeypatch):
     monkeypatch.setattr(summarizer.requests, 'post', MagicMock(return_value=response))
     messages = []
     monkeypatch.setattr(summarizer.logger, 'error', lambda m: messages.append(m))
-    assert summarizer._github_models_summaries([{'title': 'a'}]) is None
+    assert summarizer._github_models_text('prompt') is None
     assert 'HTTP 200' in messages[0] and 'text/html' in messages[0] and '<html>login' in messages[0]
+
+
+def test_unusable_endpoint_is_skipped_and_the_next_one_is_tried(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', None)
+    monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', 'ghs')
+    first, second = summarizer.GITHUB_MODELS_ENDPOINTS[0][0], summarizer.GITHUB_MODELS_ENDPOINTS[1][0]
+    calls = []
+    ok_response = MagicMock(status_code=200)
+    ok_response.json.return_value = {'choices': [{'message': {'content': '["요약"]'}}]}
+    bad_response = MagicMock(status_code=200, text='OK\r\n', history=[])
+    bad_response.headers = {'Content-Type': 'text/plain'}
+    bad_response.json.side_effect = ValueError('Expecting value')
+
+    def post(url, **kwargs):
+        calls.append(url)
+        return bad_response if url == first else ok_response
+
+    monkeypatch.setattr(summarizer.requests, 'post', post)
+    assert summarizer._github_models_text('p') == '["요약"]'
+    assert summarizer._github_models_text('p') == '["요약"]'
+    assert calls == [first, second, second]   # the broken endpoint is not asked a second time
+
+
+def test_auth_failure_disables_claude_for_the_run(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', 'bad')
+    monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', None)
+    post = MagicMock(return_value=MagicMock(status_code=401, text='unauthorized'))
+    monkeypatch.setattr(summarizer.requests, 'post', post)
+    assert summarizer.ai_text('p') is None and summarizer.ai_text('p') is None
+    assert post.call_count == 1
+
+
+def test_temporary_error_does_not_try_the_other_endpoint(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', None)
+    monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', 'ghs')
+    post = MagicMock(side_effect=RuntimeError('429'))
+    monkeypatch.setattr(summarizer.requests, 'post', post)
+    assert summarizer._github_models_text('p') is None
+    assert post.call_count == 1
+
+
+def test_article_in_two_groups_is_summarized_once(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ANTHROPIC_API_KEY', None)
+    monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', None)
+    shared = {'title': 'a', 'url': 'u', 'snippet': 'x'}
+    calls = []
+    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group: calls.append(len(group)))
+    summarizer.add_summaries([[shared], [shared, {'title': 'b', 'url': 'u2', 'snippet': 'y'}]], fetch_pages=False)
+    assert calls == [1, 1]   # the shared article is not part of the second call
+
+
+def test_parse_ai_list_accepts_any_length():
+    assert summarizer.parse_ai_list('앞말 ["가", "나", "다"]') == ['가', '나', '다']
+    assert summarizer.parse_ai_list('[]') is None
+    assert summarizer.parse_ai_list('[1]') is None
+
+
+def test_key_points_use_ai_and_cap_at_five(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ai_text', lambda prompt: '["1","2","3","4","5","6","7"]')
+    result = summarizer.add_key_points({'BE': {'text': '자료', 'fallback': ['수치']}})
+    assert result['BE'] == {'points': ['1', '2', '3', '4', '5'], 'source': 'ai'}
+
+
+def test_key_points_fall_back_to_the_numbers(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ai_text', lambda prompt: None)
+    result = summarizer.add_key_points({
+        'BE': {'text': '자료', 'fallback': ['a', 'b']}, 'X': {'text': '', 'fallback': []}})
+    assert result == {'BE': {'points': ['a', 'b'], 'source': 'data'}}
+
+
+def test_key_points_prompt_only_allows_the_given_material():
+    prompt = summarizer.build_key_points_prompt('BE', '[뉴스]\n- x')
+    assert '자료에 없는' in prompt and '[뉴스]' in prompt and '5개' in prompt

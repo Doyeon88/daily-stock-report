@@ -215,16 +215,25 @@ function formatNews(article) {
   };
 }
 
-// 리포트 목록: 애널리스트 변경(Yahoo 집계)과 공시를 날짜순으로 합칩니다. 공시 본문은 읽지 않아 요약은 양식 설명입니다.
-function formatReportItems(analystEntry, filingInfo) {
+// 리포트 목록: 애널리스트 리포트 기사(링크+요약), 의견·목표가 변경(Yahoo 집계, 분석 페이지 링크), 공시를 날짜순으로 합칩니다.
+// 증권사 리포트 원문은 가져올 수 없어 기사 제목·발췌 범위의 요약입니다. 공시 본문은 읽지 않아 공시 요약은 양식 설명입니다.
+function formatReportItems(analystEntry, filingInfo, ticker, analystArticles) {
   const items = [];
+  for (const a of analystArticles || []) {
+    items.push({
+      kind: '리포트 기사', date: String(a.published || '').slice(0, 10), title: String(a.title),
+      summary: a.summary || '', url: safeUrl(a.url), tag: a.tag || '',
+      origin: [a.source, summaryLabel(a), '?미검증'].filter(Boolean).join(' · '),
+    });
+  }
+  const analysisUrl = ticker ? 'https://finance.yahoo.com/quote/' + encodeURIComponent(ticker) + '/analysis/' : null;
   for (const r of (analystEntry && analystEntry.ratings) || []) {
     const grade = r.from_grade && r.to_grade ? r.from_grade + ' → ' + r.to_grade : r.to_grade || r.action || '';
     const target = has(r.target) ? '목표가 ' + (has(r.prior_target) ? money(r.prior_target) + ' → ' : '') + money(r.target) : '';
     items.push({
-      kind: '애널리스트', date: String(r.date), title: r.firm + (grade ? ' · ' + grade : ''),
+      kind: '의견 변경', date: String(r.date), title: r.firm + (grade ? ' · ' + grade : ''),
       summary: [grade ? '투자의견 ' + grade : null, target || null].filter(Boolean).join(' · '),
-      url: null, tag: '', origin: 'Yahoo 집계',
+      url: analysisUrl, tag: '', origin: 'Yahoo 집계',
     });
   }
   for (const f of (filingInfo && filingInfo.filings) || []) {
@@ -234,7 +243,15 @@ function formatReportItems(analystEntry, filingInfo) {
       summary: f.summary || '', url: item.url, tag: item.tag, origin: '✔검증(SEC/Yahoo)',
     });
   }
-  return items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return items.sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0));
+}
+
+// 종목별 핵심 5가지의 출처 표시
+function keyPointsLabel(entry) {
+  if (!entry || !entry.points || !entry.points.length) return '';
+  return entry.source === 'ai'
+    ? '핵심 ' + entry.points.length + '가지 · AI 정리(수집한 제목·발췌·수치만 근거, ?미검증)'
+    : '핵심 ' + entry.points.length + '가지 · 수치 요약(자동)';
 }
 
 function summaryLabel(article) {
@@ -385,7 +402,8 @@ function renderReport(doc, data) {
     const check = (data.checklist || {})[ticker];
     const filingInfo = filings[ticker] || { filings: [], form4_count: 0 };
     const articles = news[ticker] || [];
-    const reports = formatReportItems(analystEntry, filingInfo);
+    const keyPoints = (data.key_points || {})[ticker];
+    const reports = formatReportItems(analystEntry, filingInfo, ticker, (data.analyst_articles || {})[ticker]);
     const quote = formatRow(row);
 
     const card = element('section', 'card panel');
@@ -397,6 +415,15 @@ function renderReport(doc, data) {
     card.appendChild(heading);
     card.appendChild(element('div', 'quote ' + (quote.unavailable ? '' : quote.direction),
       quote.unavailable ? '데이터 없음 (' + quote.note + ')' : quote.price + ' ' + quote.change + ' (' + quote.percent + ')'));
+
+    if (keyPoints && keyPoints.points && keyPoints.points.length) {
+      const box = element('div', 'keypoints');
+      box.appendChild(element('h3', '', keyPointsLabel(keyPoints)));
+      const ol = element('ol', 'items');
+      for (const point of keyPoints.points) ol.appendChild(element('li', '', String(point)));
+      box.appendChild(ol);
+      card.appendChild(box);
+    }
 
     const list = element('dl', 'lines');
     for (const line of lines) {
@@ -432,7 +459,7 @@ function renderReport(doc, data) {
 
     // 리포트: 애널리스트 의견 변경 + 공시
     if (reports.length || filingInfo.form4_count) {
-      card.appendChild(element('h3', '', '리포트·공시 (' + reports.length + ')' + (filingInfo.source === 'yahoo' ? ' · 공시는 Yahoo Finance 제공' : '')));
+      card.appendChild(element('h3', '', '애널리스트 리포트·공시 (' + reports.length + ')' + (filingInfo.source === 'yahoo' ? ' · 공시는 Yahoo Finance 제공' : '')));
       const ul = element('ul', 'items');
       for (const item of reports) {
         const li = element('li');
@@ -478,7 +505,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
     formatFiling, formatNews, formatNewsTime, renderReport, DATA_URL_PREFIX,
-    formatValuation, formatAnalyst, formatHolder, formatCalendarItem, formatPortfolio, formatReportItems,
+    formatValuation, formatAnalyst, formatHolder, formatCalendarItem, formatPortfolio, formatReportItems, keyPointsLabel,
     summaryLabel, classTag: tagTone,
   };
 }

@@ -69,7 +69,7 @@ def main():
             analyst_changes, competitor_scraper, institutional, news_scraper, policy_tracker,
             sec_filings, stock_details, summarizer, yfinance_scraper
         )
-        from processors import calendar_events, portfolio, report_generator, valuation
+        from processors import calendar_events, key_points, portfolio, report_generator, tagging, valuation
         from notifications import fcm_notifier, report_publisher
 
         logger.info("Step 1: Collecting stock data...")
@@ -86,9 +86,13 @@ def main():
         logger.info(f"- Details for {sum(1 for d in details.values() if d)}/{len(STOCKS_TO_TRACK)} ticker(s)")
 
         logger.info("Step 3: Collecting news...")
-        news = _collect_optional("News", lambda: news_scraper.fetch_news(STOCKS_TO_TRACK), {})
+        bundle = _collect_optional(
+            "News", lambda: news_scraper.fetch_news_bundle(STOCKS_TO_TRACK), {'news': {}, 'analyst': {}})
+        news, analyst_articles = bundle.get('news', {}), bundle.get('analyst', {})
         logger.info(f"- {sum(len(items) for items in news.values())} headline(s)")
-        _collect_optional("News summaries", lambda: summarizer.add_summaries(list(news.values())), None)
+        _collect_optional(
+            "News summaries",
+            lambda: summarizer.add_summaries(list(news.values()) + list(analyst_articles.values())), None)
 
         logger.info("Step 4: Collecting SEC filings...")
         filings = _collect_optional(
@@ -120,7 +124,20 @@ def main():
                 result['note'] = SCENARIO_NOTES.get(ticker, '')
                 valuations[ticker] = result
         portfolio_result = portfolio.compute_portfolio(PORTFOLIO, stock_data)
+        # 종목별 핵심 5가지: 수집한 자료만 근거로 AI가 정리(안 되면 수치 요약)
+        def collect_key_points():
+            materials = {
+                t: key_points.build_material(
+                    t, details.get(t), tagging.tag_news(news.get(t, [])), analyst_articles.get(t, []),
+                    analyst.get(t), {'filings': tagging.tag_filings((filings.get(t) or {}).get('filings', []))})
+                for t in STOCKS_TO_TRACK
+            }
+            return summarizer.add_key_points(materials)
+        points = _collect_optional("Key points", collect_key_points, {})
+
         extras = {
+            'analyst_articles': {t: tagging.tag_news(items) for t, items in analyst_articles.items()},
+            'key_points': points,
             'analyst': analyst, 'institutional': holders, 'policy': policy, 'calendar': calendar,
             'valuation': valuations,
             'portfolio': portfolio_result,   # 금액 포함: 로컬 출력용, 저장소에는 올리지 않는다

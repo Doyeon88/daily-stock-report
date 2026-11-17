@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 15
 MAX_TITLE_LENGTH = 140
 MAX_SNIPPET_LENGTH = 600
+ANALYST_LOOKBACK_DAYS = 14
 
 
 def _finnhub_news(ticker: str, now: datetime) -> List[Dict]:
@@ -120,7 +121,8 @@ def google_news_query(query: str, now: datetime, lookback_days: int = NEWS_LOOKB
     return articles
 
 
-def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBACK_DAYS) -> List[Dict]:
+def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBACK_DAYS,
+           limit: Optional[int] = None) -> List[Dict]:
     """Keep recent articles, drop duplicate titles (keeping the first seen), newest first, capped"""
     cutoff = now - timedelta(days=lookback_days)
     positions, merged = {}, []
@@ -142,7 +144,65 @@ def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBA
             continue
         positions[key] = len(merged)
         merged.append(entry)
-    return merged[:NEWS_LIMIT]
+    return merged[:limit or NEWS_LIMIT]
+
+
+ANALYST_WORDS = (
+    'price target', 'target price', 'analyst', 'upgrade', 'downgrade', 'initiate', 'initiates', 'initiated',
+    'reiterate', 'reiterates', 'rating', 'overweight', 'outperform', 'underperform', 'coverage', 'raises pt',
+    'lowers pt', 'cuts pt', 'buy rating', 'sell rating', 'top pick',
+)
+ANALYST_LIMIT = 5
+
+
+def is_analyst_article(title: str) -> bool:
+    """Headline talks about an analyst report (rating, price target, coverage)"""
+    lowered = (title or '').lower()
+    return any(w in lowered for w in ANALYST_WORDS)
+
+
+def _google_analyst_news(ticker: str, now: datetime) -> List[Dict]:
+    name = STOCK_NAMES.get(ticker, ticker)
+    return google_news_query(f'"{name}" analyst price target', now, lookback_days=ANALYST_LOOKBACK_DAYS)
+
+
+def _sources():
+    sources = [('Google News', _google_news), ('Yahoo Finance', _yahoo_news)]
+    if FINNHUB_API_KEY:
+        sources.insert(0, ('Finnhub', _finnhub_news))
+    return sources
+
+
+def fetch_news_bundle(tickers: List[str], now: Optional[datetime] = None) -> Dict[str, Dict[str, List[Dict]]]:
+    """
+    Recent headlines and analyst-report articles for each ticker
+
+    Returns:
+        {'news': {ticker: [article]}, 'analyst': {ticker: [article]}}
+        article = {'title', 'source', 'url', 'published' (ISO, UTC), 'snippet'}, newest first.
+        'analyst' holds the articles about ratings and price targets from every source (including an extra
+        search for them), picked before the cap on 'news' is applied; the same dict objects as in 'news'
+        are reused when an article is in both.
+    """
+    now = now or datetime.now(timezone.utc)
+    sources = _sources()
+    logger.info(f"Fetching news for {len(tickers)} ticker(s) from: {[name for name, _ in sources]}")
+
+    news, analyst = {}, {}
+    for ticker in tickers:
+        articles = []
+        for name, fetch in sources + [('Google News (analyst)', _google_analyst_news)]:
+            try:
+                articles += call_with_retry(lambda: fetch(ticker, now), f"{name} for {ticker}")
+            except Exception as e:
+                logger.error(f"{name} unavailable for {ticker}: {e}")
+        news[ticker] = _merge(articles, now)
+        pool = _merge([a for a in articles if is_analyst_article(a['title'])], now, limit=ANALYST_LIMIT,
+                      lookback_days=ANALYST_LOOKBACK_DAYS)
+        by_url = {a['url']: a for a in news[ticker]}
+        analyst[ticker] = [by_url.get(a['url'], a) for a in pool]
+
+    return {'news': news, 'analyst': analyst}
 
 
 def fetch_news(tickers: List[str], now: Optional[datetime] = None) -> Dict[str, List[Dict]]:
@@ -157,15 +217,10 @@ def fetch_news(tickers: List[str], now: Optional[datetime] = None) -> Dict[str, 
         dict: ticker -> list of {'title', 'source', 'url', 'published' (ISO, UTC)}, newest first
     """
     now = now or datetime.now(timezone.utc)
-    sources = [('Google News', _google_news), ('Yahoo Finance', _yahoo_news)]
-    if FINNHUB_API_KEY:
-        sources.insert(0, ('Finnhub', _finnhub_news))
-    logger.info(f"Fetching news for {len(tickers)} ticker(s) from: {[name for name, _ in sources]}")
-
     results = {}
     for ticker in tickers:
         articles = []
-        for name, fetch in sources:
+        for name, fetch in _sources():
             try:
                 articles += call_with_retry(lambda: fetch(ticker, now), f"{name} news for {ticker}")
             except Exception as e:

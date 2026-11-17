@@ -11,17 +11,19 @@ import main
 from notifications import fcm_notifier, report_publisher
 from scrapers import (
     analyst_changes, competitor_scraper, institutional, news_scraper, policy_tracker,
-    sec_filings, stock_details, yfinance_scraper
+    sec_filings, stock_details, summarizer, yfinance_scraper
 )
 
 OPTIONAL_COLLECTORS = (
     (stock_details, 'fetch_stock_details', {}),
-    (news_scraper, 'fetch_news', {}),
+    (news_scraper, 'fetch_news_bundle', {'news': {}, 'analyst': {}}),
     (sec_filings, 'fetch_sec_filings', {}),
     (competitor_scraper, 'compare_stocks', {'peers': {}, 'market': []}),
     (analyst_changes, 'fetch_analyst_changes', {}),
     (institutional, 'fetch_institutional', {}),
     (policy_tracker, 'fetch_policy_news', []),
+    (summarizer, 'add_summaries', None),
+    (summarizer, 'add_key_points', {}),
 )
 
 
@@ -106,7 +108,9 @@ def test_failing_optional_collector_does_not_stop_the_report(monkeypatch, module
 
 def test_collected_extras_reach_the_report_and_the_published_link(monkeypatch):
     monkeypatch.setattr(stock_details, 'fetch_stock_details', MagicMock(return_value={'A': {'rsi14': 25.0}}))
-    monkeypatch.setattr(news_scraper, 'fetch_news', MagicMock(return_value={'A': [{'title': 'Headline'}]}))
+    monkeypatch.setattr(
+        news_scraper, 'fetch_news_bundle',
+        MagicMock(return_value={'news': {'A': [{'title': 'Headline'}]}, 'analyst': {'A': []}}))
     monkeypatch.setattr(
         report_publisher, 'publish_report', MagicMock(return_value='https://raw.example/report.json')
     )
