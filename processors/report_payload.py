@@ -46,6 +46,7 @@ def build_full_payload(report: Dict) -> Dict:
         'comparison': report.get('comparison') or {},
         'tags': report.get('tags') or {},
         'analyst': report.get('analyst') or {},
+        'consensus': report.get('consensus') or {},
         'analyst_articles': report.get('analyst_articles') or {},
         'key_points': report.get('key_points') or {},
         'headlines': report.get('headlines') or [],

@@ -99,6 +99,8 @@ STOCK_NAMES = {t['symbol']: t.get('name') or t['symbol'] for t in _ENTRIES}
 # 사용자 시나리오 EPS: {ticker: {'2027': 0.65, ...}}
 SCENARIO_EPS = {t['symbol']: t['scenario_eps'] for t in _ENTRIES if t.get('scenario_eps')}
 SCENARIO_NOTES = {t['symbol']: t.get('scenario_note', '') for t in _ENTRIES if t.get('scenario_eps')}
+# 직접 입력한 컨센서스(예: Yahoo에 없는 2028년). watchlist.json의 종목에 "consensus_manual": {"2028": {"revenue_m": 3100, "eps": 5.2, "source": "출처"}}
+CONSENSUS_MANUAL = {t['symbol']: t['consensus_manual'] for t in _ENTRIES if t.get('consensus_manual')}
 # 시장 맥락으로 함께 보여 줄 지수 (티커, 표시 이름)
 MARKET_CONTEXT = [
     (m['symbol'], m.get('name') or m['symbol']) for m in WATCHLIST.get('market_context', [])

@@ -173,6 +173,42 @@ function formatAnalyst(entry) {
   return lines;
 }
 
+// 큰 금액을 $1.05B / $455.7M 형태로
+function bigMoney(v) {
+  if (!has(v)) return '-';
+  const n = Number(v);
+  if (Math.abs(n) >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+  return '$' + (n / 1e6).toFixed(1) + 'M';
+}
+
+// 연도별 컨센서스(매출·EPS·PER)와 목표주가. Yahoo는 올해·내년까지만 주므로 2028년은 직접 입력이 없으면 '자료 없음'
+function formatConsensus(entry) {
+  const lines = [];
+  const rows = (entry && entry.years) || [];
+  for (const r of rows) {
+    const range = (lo, hi, fmt) => (has(lo) && has(hi) ? ' (' + fmt(lo) + ' ~ ' + fmt(hi) + ')' : '');
+    const parts = [
+      has(r.revenue) ? '매출 ' + bigMoney(r.revenue) + range(r.revenue_low, r.revenue_high, bigMoney)
+        + (has(r.revenue_growth) ? ' ' + signed(r.revenue_growth * 100) : '') : null,
+      has(r.eps) ? 'EPS ' + money(r.eps) + range(r.eps_low, r.eps_high, money) : null,
+      has(r.per) ? 'PER ' + r.per + '배' : null,
+      r.analysts ? r.analysts + '명' : null,
+      r.note ? '출처: ' + r.note : null,
+    ].filter(Boolean);
+    lines.push(r.label + (r.fiscal_year && r.source !== 'manual' ? ' FY' + r.fiscal_year : '') + ' · ' + parts.join(' · '));
+  }
+  if (rows.length && !rows.some((r) => r.fiscal_year && r.fiscal_year >= 2028)) {
+    lines.push('2028년 · 자료 없음 (Yahoo는 내년까지, 직접 입력하면 표시)');
+  }
+  const t = entry && entry.targets;
+  if (t && (has(t.mean) || has(t.high))) {
+    const upside = has(t.mean) && has(entry.price) && entry.price ? ' (현재가 대비 ' + signed((t.mean / entry.price - 1) * 100) + ')' : '';
+    lines.push('목표주가 평균 ' + money(t.mean) + upside + ' · 중앙 ' + money(t.median)
+      + ' · 높 ' + money(t.high) + ' · 낮 ' + money(t.low));
+  }
+  return lines;
+}
+
 function formatHolder(h) {
   return h.holder + ' ' + Number(h.shares).toLocaleString('en-US') + '주'
     + (has(h.pct_held) ? ' (' + Number(h.pct_held).toFixed(2) + '%)' : '')
@@ -516,6 +552,7 @@ function renderReport(doc, data) {
       addList('시나리오 EPS 밸류에이션 (제 추정' + (note ? ' · ' + note : '') + ')',
         valuationLines.map((v) => v.label + ' ' + v.text));
     }
+    addList('컨센서스 (Yahoo 집계 · 매출/EPS/PER)', formatConsensus((data.consensus || {})[ticker]));
     addList('EPS 컨센서스 변화 (Yahoo 집계)', ((analystEntry && analystEntry.eps_trend) || []).length
       ? analystLines.filter((t) => t.startsWith('EPS 컨센')) : []);
     addList('13F 기관 보유 (지연·롱온리·패시브 포함, 원문 확인 필요)', holders.map(formatHolder));
@@ -542,7 +579,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
     formatFiling, formatNews, formatNewsTime, formatHeadline, renderReport, DATA_URL_PREFIX,
-    formatValuation, formatAnalyst, formatHolder, formatCalendarItem, formatPortfolio, formatReportItems, keyPointsLabel,
+    formatValuation, formatAnalyst, formatConsensus, formatHolder, formatCalendarItem, formatPortfolio, formatReportItems, keyPointsLabel,
     summaryLabel, classTag: tagTone,
   };
 }

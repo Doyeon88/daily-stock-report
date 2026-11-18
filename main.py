@@ -66,7 +66,7 @@ def main():
     try:
         # Import data collectors, processors and notifications
         from scrapers import (
-            analyst_changes, competitor_scraper, headlines, institutional, news_scraper, policy_tracker,
+            analyst_changes, competitor_scraper, consensus, headlines, institutional, news_scraper, policy_tracker,
             sec_filings, stock_details, summarizer, yfinance_scraper
         )
         from processors import calendar_events, key_points, portfolio, report_generator, tagging, valuation
@@ -119,6 +119,7 @@ def main():
         logger.info(f"- {len(comparison.get('market', []))} market index(es)")
 
         logger.info("Step 5b: Analyst and consensus changes, 13F holders (13F season only), policy news...")
+        consensus_data = _collect_optional("Consensus", lambda: consensus.fetch_consensus(STOCKS_TO_TRACK), {})
         analyst = _collect_optional("Analyst changes", lambda: analyst_changes.fetch_analyst_changes(STOCKS_TO_TRACK), {})
         holders = _collect_optional("13F holders", lambda: institutional.fetch_institutional(STOCKS_TO_TRACK), {})
         policy = _collect_optional("Policy news", policy_tracker.fetch_policy_news, [])
@@ -157,7 +158,7 @@ def main():
             'analyst_articles': {t: tagging.tag_news(items) for t, items in analyst_articles.items()},
             'key_points': points,
             'headlines': headline_list,
-            'analyst': analyst, 'institutional': holders, 'policy': policy, 'calendar': calendar,
+            'analyst': analyst, 'consensus': consensus_data, 'institutional': holders, 'policy': policy, 'calendar': calendar,
             'valuation': valuations,
             'portfolio': portfolio_result,   # 금액 포함: 로컬 출력용, 저장소에는 올리지 않는다
             'portfolio_public': portfolio.public_view(portfolio_result, PORTFOLIO_PUBLISH_AMOUNTS),
