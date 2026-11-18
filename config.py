@@ -42,7 +42,7 @@ PORTFOLIO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portf
 
 _DEFAULT_WATCHLIST = {
     'tickers': [
-        {'symbol': 'BE', 'name': 'Bloom Energy', 'competitors': ['FCEL', 'PLUG', 'HYLN']},
+        {'symbol': 'BE', 'name': 'Bloom Energy', 'competitors': ['FCEL', 'HYLN']},
         {'symbol': 'BWXT', 'name': 'BWX Technologies', 'competitors': ['RTX', 'LMT', 'NOC']},
         {'symbol': 'CRCL', 'name': 'Circle Internet Group', 'competitors': ['COIN', 'PYPL']},
     ],
