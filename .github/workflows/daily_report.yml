@@ -2,8 +2,8 @@ name: Daily Stock Report
 
 on:
   schedule:
-    # tue-sat 07:00 KST (scripts/sync_schedule.py가 watchlist.json에서 만든 값)
-    - cron: '0 22 * * 1,2,3,4,5'
+    # tue-sat 06:30 KST (scripts/sync_schedule.py가 watchlist.json에서 만든 값)
+    - cron: '30 21 * * 1,2,3,4,5'
   workflow_dispatch:  # 수동 실행 버튼
 
 # 쓰기 권한은 상세 리포트(JSON)를 report-data 브랜치에 커밋하려고 필요하다 (notifications/report_publisher.py).

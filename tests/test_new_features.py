@@ -195,7 +195,7 @@ def test_repo_watchlist_is_consistent():
     assert 'EROC' in config.STOCKS_TO_TRACK
     assert set(config.COMPETITOR_MAP) == set(config.STOCKS_TO_TRACK) == set(config.STOCK_NAMES)
     assert config.SCENARIO_EPS['EROC']['2028'] == 1.5
-    assert config.DAILY_REPORT_TIME == '07:00'
+    assert config.DAILY_REPORT_TIME == json.load(open('watchlist.json'))['report_time']
 
 
 def test_portfolio_comes_from_env_then_file(monkeypatch, tmp_path):

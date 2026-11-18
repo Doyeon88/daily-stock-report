@@ -66,6 +66,22 @@
         "LMT",
         "NOC"
       ]
+    },
+    {
+      "symbol": "TEM",
+      "name": "Tempus AI",
+      "competitors": [
+        "GH",
+        "NTRA"
+      ]
+    },
+    {
+      "symbol": "SYM",
+      "name": "Symbotic",
+      "competitors": [
+        "ZBRA",
+        "ROK"
+      ]
     }
   ],
   "market_context": [
