@@ -1,6 +1,6 @@
 {
   "_comment": "이 파일만 고치면 종목·실행 시각·이벤트가 바뀝니다. 실행 시각을 바꾼 뒤에는 `python scripts/sync_schedule.py`로 GitHub Actions 스케줄에 반영하세요.",
-  "report_time": "07:00",
+  "report_time": "06:30",
   "report_days": "tue-sat",
   "tickers": [
     {
@@ -9,7 +9,7 @@
       "competitors": [
         "FCEL",
         "PLUG",
-        "CAT"
+        "GEV"
       ]
     },
     {
@@ -36,19 +36,19 @@
       ]
     },
     {
-      "symbol": "CAT",
-      "name": "Caterpillar",
+      "symbol": "PLUG",
+      "name": "Plug Power",
       "competitors": [
         "BE",
-        "EROC"
+        "FCEL"
       ]
     },
     {
-      "symbol": "FPS",
-      "name": "Forgent Power Solutions",
+      "symbol": "AAOI",
+      "name": "Applied Optoelectronics",
       "competitors": [
-        "GEV",
-        "VRT"
+        "COHR",
+        "LITE"
       ]
     },
     {
