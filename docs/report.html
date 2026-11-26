@@ -53,6 +53,13 @@
     .keypoints { background: color-mix(in srgb, CanvasText 5%, transparent); border-radius: .5rem; padding: .1rem .8rem .5rem; margin-bottom: .6rem; }
     .keypoints h3 { margin-top: .6rem; }
     .hint { color: var(--muted); font-size: .8rem; margin-top: 1rem; }
+    .warn { color: #e37400; }
+    .dq { color: #e37400; margin: -.2rem 0 .4rem; }
+    /* AI 의견: 사실(요약)과 구분되는 AI의 전망·판단 */
+    .opinion { margin-top: .3rem; padding: .3rem .55rem; border-left: 3px solid #f29900; border-radius: .3rem;
+               background: color-mix(in srgb, #f29900 9%, transparent); font-size: .85rem; line-height: 1.45; color: CanvasText; }
+    .opinion-label { font-weight: 700; color: #e37400; font-size: .74rem; margin-right: .35rem; }
+    .box > .opinion { margin: .4rem 0 .2rem; }
     /* 폰 화면: 글자와 여백을 줄여 5열이 한 화면에 들어오게 한다 */
     @media (max-width: 520px) {
       body { padding: 0 .75rem; }
@@ -86,10 +93,11 @@
     <tbody id="rows"></tbody>
   </table>
   <section id="policy" class="box" hidden><h2>정책·규제</h2><ul id="policy-list"></ul></section>
+  <section id="risk" class="box" hidden><h2>관심 종목 리스크 (1년 일봉)</h2><ul id="risk-list"></ul></section>
   </div>
   <div id="notice"></div>
   <div id="cards"></div>
-  <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다. 호재/중립/악재 태그는 키워드 자동 분류(참고용), ✔검증은 공시·거래소 데이터, ?미검증은 언론 헤드라인·수동 입력입니다. 투자 권유가 아닙니다.</p>
+  <p class="hint">미국 시장 기준 가격(USD). 등락률은 전일 종가 대비이며 빨강은 상승, 파랑은 하락입니다. 호재/중립/악재 태그는 AI 판정(기사 본문·발췌 기준, 'AI 판정' 표시) 또는 키워드 자동 분류(참고용), ✔검증은 공시·거래소 데이터, ?미검증은 언론 헤드라인·수동 입력입니다. <b>AI 의견</b>은 앞으로의 진행·시기와 관심 종목 영향에 대한 AI의 추정으로, 사실 확인이 되지 않은 참고용입니다. 투자 권유가 아닙니다.</p>
   <script src="./report.js"></script>
 </body>
 </html>

@@ -89,6 +89,30 @@ def build_flags(
     return flags
 
 
+def build_extra_flags(report: Dict, tickers: List[str]) -> List[str]:
+    """
+    Signal lines from the newer sections (each only when that section was collected):
+    50/200-day cross, high dilution risk, insider cluster buying, the options' expected move before earnings
+    """
+    details = report.get('details') or {}
+    signals, dilution = report.get('signals') or {}, report.get('dilution') or {}
+    insiders, options = report.get('insiders') or {}, report.get('options') or {}
+    flags = []
+    for ticker in tickers:
+        for label in (signals.get(ticker) or {}).get('labels', []):
+            if label['text'].startswith(('골든크로스', '데드크로스')):
+                flags.append(f"{ticker} {label['text'].split('(')[0]}")
+        if (dilution.get(ticker) or {}).get('level') == '높음':
+            flags.append(f"{ticker} 희석 위험 높음")
+        if (insiders.get(ticker) or {}).get('cluster_buy'):
+            flags.append(f"{ticker} 임원 클러스터 매수")
+        option = options.get(ticker) or {}
+        days = (details.get(ticker) or {}).get('days_to_earnings')
+        if option.get('for_earnings') and days is not None and 0 <= days <= EARNINGS_SOON_DAYS:
+            flags.append(f"{ticker} 실적 기대변동 ±{option['expected_move_pct']}%")
+    return flags
+
+
 def generate_report(
     stock_data: Dict[str, Dict],
     details: Optional[Dict[str, Dict]] = None,
@@ -107,7 +131,9 @@ def generate_report(
         filings: ticker -> SEC filings (scrapers.sec_filings), optional
         comparison: competitor and market changes (scrapers.competitor_scraper), optional
         extras: optional sections: 'analyst', 'institutional', 'policy', 'calendar', 'valuation',
-                'portfolio', 'checklist' (each already computed by its own module)
+                'portfolio', 'checklist', 'earnings_history', 'insiders', 'dilution', 'options', 'signals',
+                'risk', 'opinions', 'data_quality' (each already computed by its own module); the newer
+                sections also add signal lines (build_extra_flags)
 
     Returns:
         dict: Report data compatible with notifications.fcm_notifier.send_report
@@ -168,6 +194,7 @@ def generate_report(
         for t in tickers
     }
     report.update(extras or {})
+    report['flags'] = report['flags'] + build_extra_flags(report, tickers)
 
     logger.info(f"Generated report: {summary}")
     return report

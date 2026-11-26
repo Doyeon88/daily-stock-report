@@ -1,9 +1,9 @@
 """
 호재/중립/악재 태그와 출처 검증 표시
 
-키워드 기반의 단순 분류라서 참고용입니다(문장 전체의 맥락은 보지 못합니다).
+기사 태그는 AI가 기사 본문·발췌를 읽고 판정한 값(ai_tag)을 우선 쓰고, AI를 못 쓰면 키워드로 단순 분류합니다(참고용).
 출처 구분: 공시·거래소·Yahoo 데이터는 '검증', 언론 헤드라인은 '미검증'(원문 확인 필요).
-커뮤니티·AI 요약은 이 프로그램이 수집하지 않으며, 사용자가 직접 넣는 이벤트는 verified 값을 따릅니다.
+사용자가 직접 넣는 이벤트는 verified 값을 따릅니다.
 """
 
 from typing import Dict, Iterable, List
@@ -33,7 +33,13 @@ FILING_LABEL_TAGS = {
     '주요 계약 체결': BULLISH,
     '주요 계약 종료': BEARISH,
     '미등록 주식 발행': BEARISH,
+    '상장 유지 요건 미달': BEARISH,
+    '과거 재무제표 신뢰 불가': BEARISH,
+    '자산 손상': BEARISH,
 }
+# 양식 자체가 주식 희석·매도 물량을 뜻하는 공시
+FILING_FORM_TAGS = {form: BEARISH for form in ('S-3', 'S-3/A', 'S-3ASR', 'F-3', 'F-3/A', '424B5', '424B7')}
+AI_TAGS = (BULLISH, NEUTRAL, BEARISH)
 
 
 def classify_text(text: str) -> str:
@@ -48,16 +54,33 @@ def classify_text(text: str) -> str:
     return NEUTRAL
 
 
+def _filing_tag(filing: Dict) -> str:
+    """The first item label with a tag wins (an 8-K label can list two items), then the form itself"""
+    for label in (filing.get('label') or '').split(', '):
+        if label in FILING_LABEL_TAGS:
+            return FILING_LABEL_TAGS[label]
+    return FILING_FORM_TAGS.get(filing.get('form', ''), NEUTRAL)
+
+
 def tag_news(articles: Iterable[Dict]) -> List[Dict]:
-    """Copy of the articles with 'tag' and 'verified' (headlines are never verified facts)"""
-    return [dict(a, tag=classify_text(a.get('title', '')), verified=False) for a in articles or []]
+    """
+    Copy of the articles with 'tag' and 'verified' (headlines are never verified facts).
+    The AI's verdict from the summary step ('ai_tag', read with the article text) wins over the keyword count;
+    such articles also get tag_source='ai'.
+    """
+    tagged = []
+    for a in articles or []:
+        if a.get('ai_tag') in AI_TAGS:
+            tagged.append(dict(a, tag=a['ai_tag'], tag_source='ai', verified=False))
+        else:
+            tagged.append(dict(a, tag=classify_text(a.get('title', '')), verified=False))
+    return tagged
 
 
 def tag_filings(filings: Iterable[Dict]) -> List[Dict]:
     """Copy of the filings with 'tag' and 'verified' (an SEC/Yahoo filing exists, so the fact is verified)"""
     return [
-        dict(f, tag=FILING_LABEL_TAGS.get(f.get('label', ''), NEUTRAL), verified=True,
-             summary=f.get('summary') or _describe(f))
+        dict(f, tag=_filing_tag(f), verified=True, summary=f.get('summary') or _describe(f))
         for f in filings or []
     ]
 

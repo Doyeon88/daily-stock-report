@@ -4,7 +4,9 @@
 //  - 주소의 # 뒤: 핵심 표와 신호만 담은 base64url JSON  {"v":1, "t", "s":[[ticker, price, prev, change, pct, volume, error]], "g":[신호...]}
 //  - 주소의 ?d=<URL>: 상세 데이터(v2)를 저장해 둔 JSON 파일. 불러오지 못하면 # 뒤의 핵심 표로 대신합니다.
 //    v2 = v1 + {"details", "news", "filings", "comparison", "tags", "analyst", "institutional",
-//              "policy", "calendar", "valuation", "portfolio", "checklist"}
+//              "policy", "calendar", "valuation", "portfolio", "checklist", "earnings_history", "insiders",
+//              "dilution", "options", "signals", "risk", "opinions", "data_quality"}
+//    기사·헤드라인·정책·보도자료에는 "opinion"(AI 의견), opinions[ticker][항목]에는 항목별 AI 의견이 붙습니다.
 
 // ?d= 로 받을 수 있는 주소는 이 저장소의 raw 파일로 제한합니다 (누가 만든 링크로 다른 곳의 데이터를 띄우지 못하게)
 const DATA_URL_PREFIX = 'https://raw.githubusercontent.com/Doyeon88/daily-stock-report/';
@@ -224,6 +226,163 @@ function formatHolderMove(h) {
     + (h.reported ? ' · ' + h.reported : '');
 }
 
+// 금액: $1.20B / $455.7M / $12.5K / $900
+function usd(v) {
+  if (!has(v)) return '-';
+  const n = Number(v);
+  const sign = n < 0 ? '-' : '';
+  const a = Math.abs(n);
+  if (a >= 1e9) return sign + '$' + (a / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return sign + '$' + (a / 1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a / 1e3).toFixed(1) + 'K';
+  return sign + '$' + a.toFixed(0);
+}
+
+// 1번: 실적 서프라이즈와 발표 후 반응. 첫 줄은 요약, 나머지는 분기별(다음 거래일 등락으로 색 표시)
+function formatEarningsHistory(entry) {
+  if (!entry || !(entry.rows || []).length) return [];
+  const lines = [{
+    text: '최근 ' + entry.count + '회 · 예상 상회 ' + entry.beats + '회 · 하회 ' + entry.misses + '회'
+      + (has(entry.avg_abs_reaction) ? ' · 발표 후 평균 변동 ±' + Number(entry.avg_abs_reaction).toFixed(1) + '%' : ''),
+    tone: '',
+  }];
+  for (const r of entry.rows) {
+    lines.push({
+      text: String(r.date) + ' ' + r.timing + ' · EPS ' + (has(r.reported) ? money(r.reported) : '-')
+        + ' (예상 ' + (has(r.estimate) ? money(r.estimate) : '-') + ')'
+        + (has(r.surprise_pct) ? ' · 서프라이즈 ' + signed(r.surprise_pct) : '')
+        + (has(r.reaction_pct) ? ' · 다음 거래 ' + signed(r.reaction_pct) : ''),
+      tone: has(r.reaction_pct) ? toneOf(r.reaction_pct) : '',
+    });
+  }
+  return lines;
+}
+
+// 2번: 내부자 장내 매매(Form 4). 순매수 요약, 클러스터 매수, 최근 거래
+function formatInsiders(entry) {
+  if (!entry) return [];
+  const others = entry.other_count ? ' (주식보상·옵션 행사 등 ' + entry.other_count + '건 제외)' : '';
+  if (!entry.buy_count && !entry.sell_count) {
+    return [{ text: '최근 ' + entry.window_days + '일 장내 매수·매도 없음' + others, tone: '' }];
+  }
+  const lines = [{
+    text: '최근 ' + entry.window_days + '일 순매수 ' + (entry.net_value > 0 ? '+' : '') + usd(entry.net_value)
+      + ' · 매수 ' + entry.buy_count + '건 ' + usd(entry.buy_value) + ' · 매도 ' + entry.sell_count + '건 ' + usd(entry.sell_value) + others,
+    tone: toneOf(entry.net_value),
+  }];
+  if (entry.cluster_buy) {
+    lines.push({ text: '★ 클러스터 매수: 내부자 ' + (entry.buyers || []).length + '명이 30일 안에 장내 매수', tone: 'up' });
+  }
+  for (const t of entry.recent || []) {
+    lines.push({
+      text: (t.kind === 'buy' ? '▲ 매수 ' : '▼ 매도 ') + String(t.date).slice(5) + ' ' + t.insider
+        + (t.position ? ' (' + t.position + ')' : '')
+        + (has(t.shares) ? ' · ' + Number(t.shares).toLocaleString('en-US') + '주' : '')
+        + (has(t.value) ? ' · ' + usd(t.value) : ''),
+      tone: t.kind === 'buy' ? 'up' : 'down',
+    });
+  }
+  return lines;
+}
+
+// 4번: 희석·자금조달. 위험 수준(높음=파랑 경고), 근거, 주식 수·현금·런웨이, 발행 서류(링크)
+const DILUTION_TONES = { '높음': 'down', '주의': 'warn', '낮음': '' };
+function formatDilution(entry) {
+  if (!entry) return { level: '', lines: [] };
+  const tone = DILUTION_TONES[entry.level] || '';
+  const lines = (entry.reasons || []).map((text) => ({ text: '· ' + text, tone }));
+  const parts = [
+    has(entry.shares_qoq_pct) ? '발행주식 직전 분기 ' + signed(entry.shares_qoq_pct) : null,
+    has(entry.shares_yoy_pct) ? '1년 ' + signed(entry.shares_yoy_pct) : null,
+    has(entry.cash) ? '현금 ' + usd(entry.cash) : null,
+    has(entry.quarterly_burn) ? '분기 소진 ' + usd(entry.quarterly_burn) : null,
+    has(entry.runway_quarters) ? '런웨이 약 ' + entry.runway_quarters + '분기(추정)' : null,
+  ].filter(Boolean);
+  if (parts.length) lines.push({ text: parts.join(' · '), tone: '' });
+  for (const o of entry.offerings || []) {
+    lines.push({ text: o.form + ' ' + String(o.date).slice(5) + ' · ' + o.desc, url: safeUrl(o.url), tone: '' });
+  }
+  return { level: entry.level || '', tone, lines };
+}
+
+// 5번: 옵션 기대 변동폭과 풋/콜 비율
+function formatOptions(entry) {
+  if (!entry) return [];
+  const which = entry.for_earnings ? '실적(' + String(entry.earnings_date).slice(5) + ') 직후 만기 ' : '만기 ';
+  const lines = [{
+    text: which + String(entry.expiry).slice(5) + ' · 기대 변동 ±' + entry.expected_move_pct + '%'
+      + ' (ATM $' + entry.atm_strike + ' 스트래들 ' + money(entry.straddle) + ')',
+    tone: '',
+  }];
+  const pc = entry.put_call_oi;
+  const parts = [
+    has(entry.iv_atm) ? 'ATM 내재변동성 ' + entry.iv_atm + '%' : null,
+    has(pc) ? '풋/콜 미결제 ' + Number(pc).toFixed(2) + (pc >= 1.2 ? '(하락 대비 많음)' : pc <= 0.7 ? '(상승 베팅 많음)' : '') : null,
+    has(entry.put_call_volume) ? '풋/콜 거래량 ' + Number(entry.put_call_volume).toFixed(2) : null,
+  ].filter(Boolean);
+  if (parts.length) lines.push({ text: parts.join(' · '), tone: has(pc) ? (pc >= 1.2 ? 'down' : pc <= 0.7 ? 'up' : '') : '' });
+  for (const u of entry.unusual || []) {
+    lines.push({
+      text: '이상 거래 ' + u.side + ' $' + u.strike + ' · 거래량 ' + Number(u.volume).toLocaleString('en-US')
+        + ' (미결제 ' + Number(u.oi).toLocaleString('en-US') + ')',
+      tone: u.side === '콜' ? 'up' : 'down',
+    });
+  }
+  return lines;
+}
+
+// 6번: 기술적 신호(라벨) + 종목 리스크(변동성·최대낙폭·베타)
+function formatSignals(entry, riskRow, benchmark) {
+  const lines = ((entry && entry.labels) || []).map((l) => ({ text: l.text, tone: l.tone || '' }));
+  if (entry) {
+    const parts = [
+      has(entry.macd) ? 'MACD ' + entry.macd + ' / 시그널 ' + entry.macd_signal : null,
+      has(entry.bb_pct) ? '볼린저 위치 ' + entry.bb_pct + '%' : null,
+      has(entry.ma50) ? '50일선 ' + money(entry.ma50) : null,
+      has(entry.ma200) ? '200일선 ' + money(entry.ma200) : null,
+    ].filter(Boolean);
+    if (parts.length) lines.push({ text: parts.join(' · '), tone: '' });
+  }
+  if (riskRow) {
+    const parts = [
+      has(riskRow.vol_annual) ? '연 변동성 ' + riskRow.vol_annual + '%' : null,
+      has(riskRow.max_drawdown) ? '최대낙폭 ' + riskRow.max_drawdown + '%' : null,
+      has(riskRow.beta) ? (benchmark || 'QQQ') + ' 대비 베타 ' + riskRow.beta : null,
+    ].filter(Boolean);
+    if (parts.length) lines.push({ text: parts.join(' · '), tone: '' });
+  }
+  return lines;
+}
+
+// 전체 탭: 관심 종목 리스크. 상관 높은 쌍(사실상 같은 베팅) 먼저, 그다음 종목별 베타·변동성·최대낙폭
+function formatRisk(risk) {
+  if (!risk || !risk.per_ticker) return [];
+  const lines = [];
+  const pairs = risk.high_corr_pairs || [];
+  lines.push({
+    text: pairs.length ? '함께 움직이는 쌍(상관 0.6 이상): ' + pairs.map((p) => p.a + '↔' + p.b + ' ' + p.corr).join(', ')
+      : '상관 0.6 이상인 쌍 없음',
+    tone: pairs.length ? 'warn' : '',
+  });
+  if (has(risk.avg_corr)) lines.push({ text: '종목 간 평균 상관 ' + risk.avg_corr, tone: '' });
+  for (const ticker of Object.keys(risk.per_ticker)) {
+    const r = risk.per_ticker[ticker];
+    lines.push({
+      text: ticker + ' · 베타 ' + (has(r.beta) ? r.beta : '-') + ' · 연 변동성 ' + (has(r.vol_annual) ? r.vol_annual + '%' : '-')
+        + ' · 최대낙폭 ' + (has(r.max_drawdown) ? r.max_drawdown + '%' : '-')
+        + ' · 기간 수익률 ' + (has(r.return_pct) ? signed(r.return_pct) : '-') + (r.days < 200 ? ' (상장 후 ' + r.days + '일)' : ''),
+      tone: '',
+    });
+  }
+  return lines;
+}
+
+// 7번: 비어 있는 자료 표시 ('' = 모두 수집됨)
+function formatDataQuality(entry) {
+  if (!entry || !(entry.missing || []).length) return '';
+  return '데이터 부족: ' + entry.missing.join(', ') + ' (' + entry.collected + '/' + entry.total + ' 수집)';
+}
+
 function formatCalendarItem(item) {
   const dday = item.dday === 0 ? 'D-DAY' : 'D-' + item.dday;
   return {
@@ -270,18 +429,20 @@ function formatHeadline(h) {
     meta: [h.source, formatNewsTime(h.published), '?미검증', original].filter(Boolean).join(' · '),
     summary: h.summary || '',
     label: summaryLabel(h),
+    opinion: h.opinion || '',
   };
 }
 
 // 리포트 목록: 애널리스트 리포트 기사(링크+요약), 의견·목표가 변경(Yahoo 집계, 분석 페이지 링크), 공시를 날짜순으로 합칩니다.
-// 증권사 리포트 원문은 가져올 수 없어 기사 제목·발췌 범위의 요약입니다. 공시 본문은 읽지 않아 공시 요약은 양식 설명입니다.
+// 증권사 리포트 원문은 가져올 수 없어 기사 제목·발췌 범위의 요약입니다. 8-K·6-K에 보도자료(EX-99.1)가 있으면 그 요약과
+// AI 의견을, 없으면 양식 설명을 보여 줍니다.
 function formatReportItems(analystEntry, filingInfo, ticker, analystArticles) {
   const items = [];
   for (const a of analystArticles || []) {
     items.push({
       kind: '리포트 기사', date: String(a.published || '').slice(0, 10), title: String(a.title),
-      summary: a.summary || '', url: safeUrl(a.url), tag: a.tag || '',
-      origin: [a.source, summaryLabel(a), '?미검증'].filter(Boolean).join(' · '),
+      summary: a.summary || '', url: safeUrl(a.url), tag: a.tag || '', opinion: a.opinion || '',
+      origin: [a.source, summaryLabel(a), a.tag_source === 'ai' ? 'AI 판정' : null, '?미검증'].filter(Boolean).join(' · '),
     });
   }
   const analysisUrl = ticker ? 'https://finance.yahoo.com/quote/' + encodeURIComponent(ticker) + '/analysis/' : null;
@@ -296,9 +457,12 @@ function formatReportItems(analystEntry, filingInfo, ticker, analystArticles) {
   }
   for (const f of (filingInfo && filingInfo.filings) || []) {
     const item = formatFiling(f);
+    const press = f.press_release || null;
     items.push({
-      kind: '공시', date: String(f.date), title: f.form + ' · ' + String(f.date).slice(5),
-      summary: f.summary || '', url: item.url, tag: item.tag, origin: '✔검증(SEC/Yahoo)',
+      kind: '공시', date: String(f.date), title: f.form + ' · ' + String(f.date).slice(5) + (f.label ? ' · ' + f.label : ''),
+      summary: (press && press.summary) || f.summary || '', url: item.url, tag: item.tag,
+      opinion: (press && press.opinion) || '', pressUrl: press ? safeUrl(press.url) : null,
+      origin: '✔검증(SEC/Yahoo)' + (press && press.summary ? ' · ' + summaryLabel(press).replace('기사', '보도자료') : ''),
     });
   }
   return items.sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0));
@@ -343,6 +507,14 @@ function renderReport(doc, data) {
     a.rel = 'noopener noreferrer';
     return a;
   };
+  // 항목 맨 끝의 AI 의견(전망·시기·관심 종목 영향). 사실이 아닌 AI 추정이라 따로 구분해 보여 준다.
+  const addOpinion = (parent, text) => {
+    if (!text) return;
+    const box = element('div', 'opinion');
+    box.appendChild(element('span', 'opinion-label', 'AI 의견'));
+    box.appendChild(element('span', '', String(text)));
+    parent.appendChild(box);
+  };
 
   // 시장 맥락
   const market = (data.comparison && data.comparison.market) || [];
@@ -369,6 +541,7 @@ function renderReport(doc, data) {
         details.appendChild(element('div', 'summary', f.summary));
         li.appendChild(details);
       }
+      addOpinion(li, f.opinion);
       ul.appendChild(li);
     }
   }
@@ -391,8 +564,10 @@ function renderReport(doc, data) {
       if (e.url) li.appendChild(link(e.text, e.url)); else li.appendChild(element('span', '', e.text));
       if (e.summary) li.appendChild(element('div', 'summary', e.summary));
       if (e.meta) li.appendChild(element('div', 'meta', e.meta));
+      addOpinion(li, e.opinion);
       ul.appendChild(li);
     }
+    return box;
   };
   fill('calendar', 'calendar-list', (data.calendar || []).map((c) => {
     const f = formatCalendarItem(c);
@@ -404,12 +579,15 @@ function renderReport(doc, data) {
     for (const a of group.articles || []) {
       const n = formatNews(a);
       policyEntries.push({
-        text: n.title, url: n.url, summary: a.summary || '',
+        text: n.title, url: n.url, summary: a.summary || '', opinion: a.opinion || '',
         meta: [group.query, n.meta, summaryLabel(a), '?미검증'].filter(Boolean).join(' · '),
       });
     }
   }
   fill('policy', 'policy-list', policyEntries);
+  const opinions = data.opinions || {};
+  const riskBox = fill('risk', 'risk-list', formatRisk(data.risk));
+  if (riskBox && !riskBox.hidden) addOpinion(riskBox, (opinions.__market__ || {}).risk);
 
   // 가격 표 (전체 탭)
   const body = doc.getElementById('rows');
@@ -497,6 +675,8 @@ function renderReport(doc, data) {
     card.appendChild(heading);
     card.appendChild(element('div', 'quote ' + (quote.unavailable ? '' : quote.direction),
       quote.unavailable ? '데이터 없음 (' + quote.note + ')' : quote.price + ' ' + quote.change + ' (' + quote.percent + ')'));
+    const gaps = formatDataQuality((data.data_quality || {})[ticker]);
+    if (gaps) card.appendChild(element('div', 'meta dq', gaps));
 
     if (keyPoints && keyPoints.points && keyPoints.points.length) {
       const box = element('div', 'keypoints');
@@ -532,7 +712,22 @@ function renderReport(doc, data) {
       card.appendChild(ul);
     };
 
-    // 기사: 제목 링크 + 요약
+    // 새 항목(실적·내부자·희석·옵션·기술적 신호): 색이 있는 줄 목록 + 맨 끝 AI 의견
+    const tickerOpinions = opinions[ticker] || {};
+    const addSection = (title, entries, opinion) => {
+      if (!entries.length) return;
+      card.appendChild(element('h3', '', title));
+      const ul = element('ul', 'items');
+      for (const entry of entries) {
+        const li = element('li', entry.tone || '');
+        if (entry.url) li.appendChild(link(entry.text, entry.url)); else li.appendChild(element('span', '', entry.text));
+        ul.appendChild(li);
+      }
+      card.appendChild(ul);
+      addOpinion(card, opinion);
+    };
+
+    // 기사: 제목 링크 + 요약 + AI 의견
     if (articles.length) {
       card.appendChild(element('h3', '', '기사 (' + articles.length + ')'));
       const ul = element('ul', 'items');
@@ -543,13 +738,15 @@ function renderReport(doc, data) {
         li.appendChild(link(n.title, n.url));
         if (article.summary) li.appendChild(element('div', 'summary', article.summary));
         const label = summaryLabel(article);
-        li.appendChild(element('div', 'meta', [n.meta, label, verifiedMark(article.verified === true)].filter(Boolean).join(' · ')));
+        li.appendChild(element('div', 'meta', [n.meta, label, article.tag_source === 'ai' ? 'AI 판정' : null,
+          verifiedMark(article.verified === true)].filter(Boolean).join(' · ')));
+        addOpinion(li, article.opinion);
         ul.appendChild(li);
       }
       card.appendChild(ul);
     }
 
-    // 리포트: 애널리스트 의견 변경 + 공시
+    // 리포트: 애널리스트 의견 변경 + 공시(보도자료 요약) + 항목별 AI 의견
     if (reports.length || filingInfo.form4_count) {
       card.appendChild(element('h3', '', '애널리스트 리포트·공시 (' + reports.length + ')' + (filingInfo.source === 'yahoo' ? ' · 공시는 Yahoo Finance 제공' : '')));
       const ul = element('ul', 'items');
@@ -558,13 +755,32 @@ function renderReport(doc, data) {
         li.appendChild(element('span', 'kind', item.kind));
         if (item.tag) li.appendChild(element('span', 'tag ' + tagTone(item.tag), item.tag));
         li.appendChild(link(item.title, item.url));
+        if (item.pressUrl) {
+          li.appendChild(element('span', '', ' · '));
+          li.appendChild(link('보도자료', item.pressUrl));
+        }
         if (item.summary) li.appendChild(element('div', 'summary', item.summary));
         li.appendChild(element('div', 'meta', item.date.slice(5) + ' · ' + item.origin));
+        addOpinion(li, item.opinion);
         ul.appendChild(li);
       }
       if (filingInfo.form4_count) ul.appendChild(element('li', '', '임원·대주주 거래(Form 4) ' + filingInfo.form4_count + '건 (Yahoo 목록에는 없음)'));
       card.appendChild(ul);
+      addOpinion(card, tickerOpinions.filings);
     }
+
+    addSection('실적 서프라이즈·발표 후 주가 반응 (Yahoo 집계)',
+      formatEarningsHistory((data.earnings_history || {})[ticker]), tickerOpinions.earnings);
+    addSection('내부자 장내 매매 (Form 4 · Yahoo 집계, 10b5-1 계획 여부는 미제공)',
+      formatInsiders((data.insiders || {})[ticker]), tickerOpinions.insiders);
+    const dilution = formatDilution((data.dilution || {})[ticker]);
+    addSection('희석·자금조달 점검' + (dilution.level ? ' · 위험 ' + dilution.level : '') + ' (분기 재무 기반 추정)',
+      dilution.lines, tickerOpinions.dilution);
+    addSection('옵션 기대 변동 (Yahoo 옵션 체인, 소형주는 호가가 얇아 참고용)',
+      formatOptions((data.options || {})[ticker]), tickerOpinions.options);
+    addSection('기술적 신호·리스크 (1년 일봉)',
+      formatSignals((data.signals || {})[ticker], ((data.risk || {}).per_ticker || {})[ticker], (data.risk || {}).benchmark),
+      tickerOpinions.technical);
 
     if (valuationLines.length) {
       const note = ((data.valuation || {})[ticker] || {}).note;
@@ -590,6 +806,7 @@ function renderReport(doc, data) {
       addMoveList('늘린 곳 (매수 상위)', inst.buyers || [], 'up');
       addMoveList('줄인 곳 (매도 상위)', inst.sellers || [], 'down');
       addList('보유량 순', holders.map(formatHolder));
+      addOpinion(card, tickerOpinions.institutional);
     }
     if (check) {
       addList('다음 이벤트 체크리스트', [
@@ -615,6 +832,7 @@ if (typeof module !== 'undefined') {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
     formatFiling, formatNews, formatNewsTime, formatHeadline, renderReport, DATA_URL_PREFIX,
     formatValuation, formatAnalyst, formatConsensus, formatHolder, formatHolderMove, formatCalendarItem, formatPortfolio, formatReportItems, keyPointsLabel,
-    summaryLabel, classTag: tagTone,
+    summaryLabel, classTag: tagTone, usd, formatEarningsHistory, formatInsiders, formatDilution, formatOptions, formatSignals,
+    formatRisk, formatDataQuality,
   };
 }

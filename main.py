@@ -18,7 +18,7 @@ from config import (
     LOG_LEVEL, LOG_FILE, LOG_FORMAT, DATA_DIR,
     STOCKS_TO_TRACK, DAILY_REPORT_TIME, TIMEZONE,
     ENABLE_FCM_NOTIFICATION, SCENARIO_EPS, SCENARIO_NOTES, VALUATION_MULTIPLES, USER_EVENTS, CHECKLIST,
-    PORTFOLIO, PORTFOLIO_PUBLISH_AMOUNTS, HEADLINE_MIN, HEADLINE_MAX, ANALYST_REPORTS_PER_TICKER
+    PORTFOLIO, PORTFOLIO_PUBLISH_AMOUNTS, HEADLINE_MIN, HEADLINE_MAX, ANALYST_REPORTS_PER_TICKER, STOCK_NAMES
 )
 
 logger = logging.getLogger(__name__)
@@ -66,10 +66,14 @@ def main():
     try:
         # Import data collectors, processors and notifications
         from scrapers import (
-            analyst_changes, competitor_scraper, consensus, headlines, institutional, news_scraper, policy_tracker,
-            sec_filings, stock_details, summarizer, yfinance_scraper
+            analyst_changes, competitor_scraper, consensus, dilution, earnings_history, headlines, insiders,
+            institutional, news_scraper, options_activity, policy_tracker, price_history, sec_filings, stock_details,
+            summarizer, yfinance_scraper
         )
-        from processors import calendar_events, key_points, portfolio, report_generator, tagging, valuation
+        from processors import (
+            calendar_events, data_quality, key_points, opinion_material, portfolio, report_generator, signals, tagging,
+            valuation
+        )
         from notifications import fcm_notifier, report_publisher
 
         logger.info("Step 1: Collecting stock data...")
@@ -96,9 +100,11 @@ def main():
             for ticker in list(analyst_articles):
                 analyst_articles[ticker] = summarizer.keep_readable(analyst_articles[ticker], spare)
         _collect_optional("Readable analyst reports", prepare_reports, None)
+        # 기사 요약 + AI 의견(전망·관심 종목 영향) + AI 호재/악재 판정. 그룹마다 어떤 종목 기사인지 알려 준다.
         _collect_optional(
             "News summaries",
-            lambda: summarizer.add_summaries(list(news.values()) + list(analyst_articles.values())), None)
+            lambda: summarizer.add_summaries(list(news.values()) + list(analyst_articles.values()),
+                                             contexts=list(news) + list(analyst_articles)), None)
 
         def trim_reports():
             for ticker in list(analyst_articles):
@@ -112,6 +118,23 @@ def main():
         )
         logger.info(f"- Filings for {len(filings)}/{len(STOCKS_TO_TRACK)} ticker(s)")
 
+        # 8-K/6-K에 붙은 보도자료(EX-99.1)를 기사처럼 요약하고 AI 의견을 붙인다
+        def summarize_press_releases():
+            texts = [(ticker, f, f.pop('_press_text', None))
+                     for ticker, info in filings.items() for f in info.get('filings', [])]
+            groups = {}
+            for ticker, f, text in texts:
+                if not f.get('press_url') or not text:
+                    continue
+                summarizer.remember_text(f['press_url'], text)
+                f['press_release'] = {'title': f"{ticker} {f['form']} {f['date']} 보도자료"
+                                      + (f" ({f['label']})" if f.get('label') else ''),
+                                      'url': f['press_url'], 'snippet': '', 'published': f['date']}
+                groups.setdefault(ticker, []).append(f['press_release'])
+            if groups:
+                summarizer.add_summaries(list(groups.values()), contexts=list(groups))
+        _collect_optional("Press release summaries", summarize_press_releases, None)
+
         logger.info("Step 5: Comparing with competitors and the market...")
         comparison = _collect_optional(
             "Competitor comparison", lambda: competitor_scraper.compare_stocks(STOCKS_TO_TRACK), {}
@@ -124,13 +147,28 @@ def main():
         holders = _collect_optional("13F holders", lambda: institutional.fetch_institutional(STOCKS_TO_TRACK), {})
         policy = _collect_optional("Policy news", policy_tracker.fetch_policy_news, [])
         _collect_optional(
-            "Policy summaries", lambda: summarizer.add_summaries([g['articles'] for g in policy]), None)
+            "Policy summaries", lambda: summarizer.add_summaries([g['articles'] for g in policy],
+                                                                 contexts=[f"정책 검색 '{g['query']}'" for g in policy]),
+            None)
 
         logger.info("Step 5c: Today's headlines (market, economy, commodities, sentiment, politics)...")
         headline_list = _collect_optional(
             "Headlines", lambda: headlines.select_headlines(headlines.fetch_candidates(), minimum=HEADLINE_MIN,
                                                             maximum=HEADLINE_MAX), [])
         logger.info(f"- {len(headline_list)} headline(s)")
+
+        logger.info("Step 5d: Earnings history, insider trades, dilution, options, technical signals and risk...")
+        earnings = _collect_optional(
+            "Earnings history", lambda: earnings_history.fetch_earnings_history(STOCKS_TO_TRACK), {})
+        insider = _collect_optional("Insider trades", lambda: insiders.fetch_insider_activity(STOCKS_TO_TRACK), {})
+        dilution_data = _collect_optional("Dilution check", lambda: dilution.fetch_dilution(STOCKS_TO_TRACK), {})
+        option_data = _collect_optional(
+            "Options", lambda: options_activity.fetch_options(STOCKS_TO_TRACK, stock_data, details), {})
+        history = _collect_optional("Price history", lambda: price_history.fetch_price_history(STOCKS_TO_TRACK), {})
+        signal_data = _collect_optional("Technical signals", lambda: signals.build_signals(history, STOCKS_TO_TRACK), {})
+        risk = _collect_optional("Risk metrics", lambda: signals.risk_metrics(history, STOCKS_TO_TRACK), {})
+        logger.info(f"- earnings {len(earnings)}, insiders {len(insider)}, dilution {len(dilution_data)}, "
+                    f"options {len(option_data)}, signals {len(signal_data)} ticker(s)")
 
         # Local calculations (no network): calendar, valuation vs. scenario EPS, portfolio, checklist
         today = datetime.now(pytz.timezone(TIMEZONE)).date()
@@ -154,6 +192,25 @@ def main():
             return summarizer.add_key_points(materials)
         points = _collect_optional("Key points", collect_key_points, {})
 
+        # 항목별 AI 의견: 실적·내부자·공시·희석·옵션·기술적 신호·13F, 그리고 관심 종목 전체 리스크
+        def collect_opinions():
+            risk_rows = (risk or {}).get('per_ticker') or {}
+            materials = {
+                t: opinion_material.build_ticker_material(
+                    t, STOCK_NAMES.get(t, t), details.get(t), earnings.get(t), insider.get(t), filings.get(t),
+                    dilution_data.get(t), option_data.get(t), signal_data.get(t), holders.get(t), risk_rows.get(t))
+                for t in STOCKS_TO_TRACK
+            }
+            materials[opinion_material.MARKET_KEY] = opinion_material.build_market_material(risk)
+            return summarizer.add_section_opinions(materials)
+        opinions = _collect_optional("Section opinions", collect_opinions, {})
+
+        sections = {'details': details, 'news': news, 'filings': filings, 'analyst': analyst,
+                    'earnings_history': earnings, 'insiders': insider, 'dilution': dilution_data,
+                    'options': option_data, 'signals': signal_data}
+        quality = _collect_optional(
+            "Data quality", lambda: data_quality.build_data_quality(STOCKS_TO_TRACK, sections), {})
+
         extras = {
             'analyst_articles': {t: tagging.tag_news(items) for t, items in analyst_articles.items()},
             'key_points': points,
@@ -163,6 +220,8 @@ def main():
             'portfolio': portfolio_result,   # 금액 포함: 로컬 출력용, 저장소에는 올리지 않는다
             'portfolio_public': portfolio.public_view(portfolio_result, PORTFOLIO_PUBLISH_AMOUNTS),
             'checklist': calendar_events.build_checklists(STOCKS_TO_TRACK, calendar, CHECKLIST),
+            'earnings_history': earnings, 'insiders': insider, 'dilution': dilution_data, 'options': option_data,
+            'signals': signal_data, 'risk': risk, 'opinions': opinions, 'data_quality': quality,
         }
 
         # CEO social media monitoring is not implemented

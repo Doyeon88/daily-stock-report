@@ -220,7 +220,7 @@ def test_article_in_two_groups_is_summarized_once(monkeypatch):
     monkeypatch.setattr(summarizer, 'GITHUB_MODELS_TOKEN', None)
     shared = {'title': 'a', 'url': 'u', 'snippet': 'x'}
     calls = []
-    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group, bodies=None: calls.append(len(group)))
+    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group, bodies=None, context=None: calls.append(len(group)))
     summarizer.add_summaries([[shared], [shared, {'title': 'b', 'url': 'u2', 'snippet': 'y'}]], fetch_pages=False)
     assert calls == [1, 1]   # the shared article is not part of the second call
 
@@ -297,10 +297,45 @@ def test_body_based_summary_is_marked_and_not_published(monkeypatch):
 
 def test_long_groups_are_split_into_batches(monkeypatch):
     sizes = []
-    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group, bodies=None: sizes.append(len(group)))
+    monkeypatch.setattr(summarizer, 'ai_summaries', lambda group, bodies=None, context=None: sizes.append(len(group)))
     group = [{'title': str(i), 'url': f'u{i}', 'snippet': 's'} for i in range(summarizer.BATCH_SIZE + 2)]
     summarizer.add_summaries([group], fetch_pages=False)
     assert sorted(sizes) == sorted([summarizer.BATCH_SIZE, 2])
+
+
+def test_answer_with_opinion_and_tone_is_stored_on_the_article(monkeypatch):
+    prompts = []
+    answer = ('[{"lines": ["상원 통과", "하원 표결 남음"], "tone": "호재", "opinion": "1월 시행이 유력해 보이며 BE에 호재다."},'
+              ' {"lines": ["관련 없음"], "tone": "모름", "opinion": ""}]')
+    monkeypatch.setattr(summarizer, 'ai_text', lambda prompt: prompts.append(prompt) or answer)
+    group = [{'title': 'Senate passes bill', 'url': 'u1', 'snippet': 's'}, {'title': 'b', 'url': 'u2', 'snippet': 's'}]
+    summarizer.add_summaries([group], fetch_pages=False, contexts=['BE'])
+    assert group[0]['summary'] == '• 상원 통과\n• 하원 표결 남음'
+    assert group[0]['opinion'] == '1월 시행이 유력해 보이며 BE에 호재다.' and group[0]['ai_tag'] == '호재'
+    assert 'opinion' not in group[1] and 'ai_tag' not in group[1]     # empty opinion and unknown tone are dropped
+    assert 'BE 관련으로 모았습니다' in prompts[0] and 'AI 의견' in prompts[0]
+
+
+def test_market_wide_prompt_says_so_and_lists_the_watchlist(monkeypatch):
+    monkeypatch.setattr(summarizer, 'watchlist_text', lambda: 'BE(Bloom Energy)')
+    prompt = summarizer.build_prompt([{'title': 'T', 'snippet': ''}])
+    assert '시장 전체·정책 뉴스' in prompt and 'BE(Bloom Energy)' in prompt and '추측' in prompt
+
+
+def test_section_opinions_keep_only_the_asked_sections(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ai_text',
+                        lambda prompt: '{"insiders": "임원 3명이 샀다. 호재.", "other": "x", "options": " "}')
+    result = summarizer.add_section_opinions({
+        'BE': {'subject': 'BE(Bloom Energy)', 'text': '[insiders]\n- 매수 3건',
+               'sections': {'insiders': '내부자 거래', 'options': '옵션'}},
+        'X': {'subject': 'X', 'text': '', 'sections': {}},
+    })
+    assert result == {'BE': {'insiders': '임원 3명이 샀다. 호재.'}}
+
+
+def test_section_opinions_without_ai_are_empty(monkeypatch):
+    monkeypatch.setattr(summarizer, 'ai_text', lambda prompt: None)
+    assert summarizer.add_section_opinions({'BE': {'text': 't', 'sections': {'risk': 'r'}}}) == {}
 
 
 def test_unresolvable_google_link_gives_no_text(monkeypatch):

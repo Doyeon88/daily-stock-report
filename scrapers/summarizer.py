@@ -1,10 +1,11 @@
 """
-기사 요약·종목별 핵심 정리 (한국어)
+기사 요약·종목별 핵심 정리·AI 의견 (한국어)
 
 AI 공급자 순서: Claude(ANTHROPIC_API_KEY) → GitHub Models(Actions의 GITHUB_TOKEN, 워크플로에 models: read 권한 필요).
 둘 다 안 되면 기사 발췌문(영문일 수 있음)을 그대로 보여 주고, 발췌문도 없으면 요약 없이 제목만 나옵니다.
-AI에는 수집한 제목·발췌문·수치만 주고 "그 밖의 지식·추측 금지"를 지시하지만, 기사 본문 전체를 읽지 않으므로
-결과는 제목·발췌 범위를 넘지 않고, 언론 기사 기반이라 '미검증' 표시는 유지됩니다.
+요약은 수집한 본문·제목·발췌문만 근거로 쓰게 하고(추측 금지), 언론 기사 기반이라 '미검증' 표시는 유지됩니다.
+요약과 따로 붙는 'AI 의견'은 앞으로의 진행·시기 전망과 관심 종목별 호재/악재 판단으로, 일반 지식과 추정이 들어가므로
+화면에 'AI 의견(추정, 투자 권유 아님)'으로 구분해 보여 줍니다.
 """
 
 import json
@@ -37,6 +38,8 @@ MAX_SUMMARY_LENGTH = 220
 MAX_LINE_LENGTH = 140          # 본문 요약 한 줄 최대 길이
 MAX_KEY_POINTS = 7
 MIN_KEY_POINTS = 5
+MAX_OPINION_LENGTH = 360       # AI 의견 최대 길이
+TONES = ('호재', '중립', '악재')
 BODY_TIMEOUT = 10
 MAX_BODY_CHARS = 3500          # 기사 하나당 AI에 주는 본문 길이
 MIN_BODY_CHARS = 300           # 이보다 짧으면 본문을 못 읽은 것으로 본다(로그인·동의 창 등)
@@ -160,6 +163,12 @@ def resolve_google_news_url(url: str) -> str:
 _text_cache: Dict[str, str] = {}   # url -> article text: a page is read once per run
 
 
+def remember_text(url: str, text: str) -> None:
+    """Use this text for the url instead of reading the page (e.g. a filing exhibit read by sec_filings)"""
+    if url and text:
+        _text_cache[url] = text
+
+
 def fetch_article_text(url: str) -> str:
     """Best effort: the article's text, '' when the site blocks us, is paywalled or has no readable text"""
     if url not in _text_cache:
@@ -191,20 +200,46 @@ def clip(text: str, limit: int = MAX_SUMMARY_LENGTH) -> str:
 
 # ---------- prompts and parsing ----------
 
-def build_prompt(articles: List[Dict], bodies: Optional[Dict[int, str]] = None) -> str:
+OPINION_GUIDE = (
+    'AI 의견(opinion)은 1~3문장, 최대 300자입니다. ① 이 일이 앞으로 어떻게 진행될지와 대략의 시기, 그렇게 보는 이유 '
+    '(예: 법안이면 남은 절차와 예상 시점) ② 관심 종목 중 영향을 받을 종목과 호재·악재 여부, 그 이유(사업 구조·경쟁 관계 등)를 씁니다. '
+    '여기서는 일반 지식을 써도 되지만 확실하지 않은 것은 "~로 보인다"처럼 추정임을 드러내고, 매수·매도 권유는 하지 않습니다. '
+    '관련된 관심 종목이 없으면 그렇다고 씁니다. 예: 상원을 통과해 하원 표결과 대통령 서명이 남았다. 연말 회기 일정상 12월 시행은 '
+    '어렵고 1월쯤 시작될 것으로 보인다. 데이터센터 자가발전(BTM) 기업, 그중 물을 쓰지 않고 NOx 배출이 거의 없는 연료전지의 BE에 호재다.'
+)
+
+
+def watchlist_text() -> str:
+    """'BE(Bloom Energy), ...' for the prompts, '' if the watchlist cannot be read"""
+    try:
+        from config import STOCK_NAMES
+    except Exception:
+        return ''
+    return ', '.join(f'{t}({name})' if name and name != t else t for t, name in STOCK_NAMES.items())
+
+
+def build_prompt(articles: List[Dict], bodies: Optional[Dict[int, str]] = None, context: Optional[str] = None) -> str:
     """
     bodies: position (0-based) -> article text, for the articles whose page could be read
+    context: what the articles were collected for (a ticker or a policy search); None for market-wide news
     """
     bodies = bodies or {}
+    watch = watchlist_text()
     lines = [
-        '아래 뉴스 각각을 한국어로 요약해 주세요. 영어 기사는 한국어로 옮겨 요약합니다.',
-        '- "본문"이 있는 기사: 중요한 내용을 5~7줄로 요약합니다. 한 줄은 한 문장(최대 120자)이고, '
-        '무슨 일인지·누가·얼마(숫자)·언제·배경·시장/종목에 미치는 쟁점 순으로 씁니다.',
-        '- 본문이 없는 기사: 제목과 발췌문이 말하는 내용만 1~2줄로 씁니다(줄 수를 채우려고 지어내지 않습니다).',
-        '규칙: 주어진 본문·제목·발췌문에 있는 내용만 쓰고 추측·평가·투자 의견을 넣지 않습니다. 숫자·고유명사는 그대로 둡니다.',
-        '출력은 JSON 하나뿐입니다: 입력과 같은 순서·같은 개수의 배열이고, 각 원소는 그 기사의 줄들(문자열 배열)입니다. '
-        '예: [["첫 줄", "둘째 줄"], ["…"]]. 문장 안에는 큰따옴표(")와 줄바꿈을 쓰지 말고 작은따옴표를 쓰세요.', '',
+        '아래 뉴스 각각을 한국어로 요약하고, 호재/악재 판정과 AI 의견을 붙여 주세요. 영어 기사는 한국어로 옮겨 요약합니다.',
+        f'이 기사들은 {context} 관련으로 모았습니다.' if context else '이 기사들은 시장 전체·정책 뉴스입니다.',
+        f'독자의 관심 종목: {watch}.' if watch else None,
+        '요약(lines): "본문"이 있는 기사는 중요한 내용을 5~7줄로 요약합니다. 한 줄은 한 문장(최대 120자)이고, '
+        '무슨 일인지·누가·얼마(숫자)·언제·배경·시장/종목에 미치는 쟁점 순으로 씁니다. '
+        '본문이 없는 기사는 제목과 발췌문이 말하는 내용만 1~2줄로 씁니다(줄 수를 채우려고 지어내지 않습니다).',
+        '요약 규칙: 주어진 본문·제목·발췌문에 있는 내용만 쓰고 추측·평가·투자 의견을 넣지 않습니다. 숫자·고유명사는 그대로 둡니다.',
+        'tone: 이 기사가 모은 대상 종목(없으면 관심 종목 전반)에 호재·중립·악재 중 하나입니다.',
+        OPINION_GUIDE,
+        '출력은 JSON 하나뿐입니다: 입력과 같은 순서·같은 개수의 배열이고, 각 원소는 '
+        '{"lines": ["첫 줄", "둘째 줄"], "tone": "호재", "opinion": "..."} 입니다. '
+        '문장 안에는 큰따옴표(")와 줄바꿈을 쓰지 말고 작은따옴표를 쓰세요.', '',
     ]
+    lines = [line for line in lines if line is not None]
     for i, a in enumerate(articles, 1):
         entry = f"{i}. 제목: {a.get('title', '')}\n   발췌: {a.get('snippet') or '(없음)'}"
         if bodies.get(i - 1):
@@ -223,6 +258,35 @@ def build_key_points_prompt(ticker: str, material: str) -> str:
         '출력은 JSON 문자열 배열 하나뿐입니다.\n\n' + material)
 
 
+def build_section_opinion_prompt(subject: str, material: str, sections: Dict[str, str]) -> str:
+    """sections: key -> what the section is, e.g. {'insiders': '내부자 거래(Form 4)'}"""
+    watch = watchlist_text()
+    keys = ', '.join(f'"{key}"({label})' for key, label in sections.items())
+    return (
+        f'아래는 {subject}에 대해 오늘 수집한 항목별 자료입니다.' + (f' 독자의 관심 종목: {watch}.' if watch else '') + '\n'
+        '항목마다 한국어 AI 의견을 1~3문장(최대 300자)으로 써 주세요: 이 수치·사실이 무엇을 뜻하는지, 앞으로 무엇을 언제 '
+        '지켜봐야 하는지, 이 종목(또는 관심 종목)에 호재인지 악재인지와 그 이유. 자료의 숫자는 그대로 인용합니다. '
+        '일반 지식은 써도 되지만 추정은 추정이라고 밝히고, 매수·매도 권유는 하지 않습니다.\n'
+        f'출력은 JSON 객체 하나뿐입니다. 키는 {keys} 이고 값은 의견 문자열입니다. '
+        '자료가 없는 항목은 빼고, 문장 안에 큰따옴표(")를 쓰지 마세요.\n\n' + material)
+
+
+def parse_ai_object(text: Optional[str], keys) -> Optional[Dict[str, str]]:
+    """{key: opinion} for the expected keys found in the model's JSON object; None if there is none"""
+    match = re.search(r'\{.*\}', text or '', re.S)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    opinions = {key: clip(value, MAX_OPINION_LENGTH) for key, value in data.items()
+                if key in keys and isinstance(value, str) and value.strip()}
+    return opinions or None
+
+
 def _lines_to_summary(item) -> Optional[str]:
     """A string stays one line; a list of strings becomes bullet lines separated by newlines"""
     if isinstance(item, str):
@@ -235,8 +299,11 @@ def _lines_to_summary(item) -> Optional[str]:
     return None
 
 
-def parse_ai_summaries(text: str, expected: int) -> Optional[List[str]]:
-    """One summary per article from the model's JSON answer, None if it is missing or has the wrong length"""
+def parse_ai_items(text: str, expected: int) -> Optional[List[Dict]]:
+    """
+    One {'summary', 'tone', 'opinion'} per article from the model's JSON answer; None if it is missing or has the
+    wrong length. Each element may be {'lines': [...], 'tone', 'opinion'} or, as before, a string / list of lines.
+    """
     match = re.search(r'\[.*\]', text or '', re.S)
     if not match:
         return None
@@ -246,8 +313,25 @@ def parse_ai_summaries(text: str, expected: int) -> Optional[List[str]]:
         return None
     if not isinstance(data, list) or len(data) != expected:
         return None
-    summaries = [_lines_to_summary(x) for x in data]
-    return summaries if all(summaries) else None
+    items = []
+    for element in data:
+        if isinstance(element, dict):
+            summary = _lines_to_summary(element.get('lines', element.get('summary')))
+            tone = element.get('tone') if element.get('tone') in TONES else None
+            opinion = element.get('opinion')
+            opinion = clip(opinion, MAX_OPINION_LENGTH) if isinstance(opinion, str) and opinion.strip() else None
+        else:
+            summary, tone, opinion = _lines_to_summary(element), None, None
+        if not summary:
+            return None
+        items.append({'summary': summary, 'tone': tone, 'opinion': opinion})
+    return items
+
+
+def parse_ai_summaries(text: str, expected: int) -> Optional[List[str]]:
+    """One summary per article from the model's JSON answer, None if it is missing or has the wrong length"""
+    items = parse_ai_items(text, expected)
+    return [item['summary'] for item in items] if items else None
 
 
 def parse_ai_list(text: str) -> Optional[List[str]]:
@@ -329,15 +413,17 @@ def ai_text(prompt: str) -> Optional[str]:
     return _claude_text(prompt) or _github_models_text(prompt)
 
 
-def ai_summaries(articles: List[Dict], bodies: Optional[Dict[int, str]] = None) -> Optional[List[str]]:
+def ai_summaries(articles: List[Dict], bodies: Optional[Dict[int, str]] = None,
+                 context: Optional[str] = None) -> Optional[List[Dict]]:
+    """[{'summary', 'tone', 'opinion'}] per article, or None"""
     if not articles:
         return None
-    prompt = build_prompt(articles, bodies)
+    prompt = build_prompt(articles, bodies, context)
     for attempt in (1, 2):
         text = ai_text(prompt)
-        summaries = parse_ai_summaries(text, len(articles))
-        if summaries or text is None:
-            return summaries
+        items = parse_ai_items(text, len(articles))
+        if items or text is None:
+            return items
         logger.warning(f"AI summary answer unusable (attempt {attempt}/2, {len(articles)} articles): "
                        f"{(text or '')[:200]!r} ... {(text or '')[-120:]!r}")
     return None
@@ -350,26 +436,30 @@ def ai_key_points(ticker: str, material: str) -> Optional[List[str]]:
 
 # ---------- public API ----------
 
-def add_summaries(groups: List[List[Dict]], fetch_pages: bool = True) -> None:
+def add_summaries(groups: List[List[Dict]], fetch_pages: bool = True, contexts: Optional[List[str]] = None) -> None:
     """
     Add 'summary', 'summary_source' ('ai' | 'snippet' | None) and 'summary_basis' to every article, in place.
-    An article that appears in several groups (same dict object) is summarized once.
+    With an AI answer the article also gets 'opinion' (AI 의견: outlook and which watchlist tickers it helps or
+    hurts) and 'ai_tag' (호재/중립/악재). An article that appears in several groups (same dict object) is
+    summarized once.
 
     Args:
         groups: lists of articles; each list is summarized in one AI call (e.g. one per ticker)
         fetch_pages: read each article's text (Google News links are resolved first); an article without text or excerpt
             falls back to the page's og:description
+        contexts: per group, what the articles were collected for (a ticker, a policy search); None = market-wide
     """
     seen = set()
     fresh_groups = []
-    for group in groups:
+    for index, group in enumerate(groups):
         fresh = [a for a in group if id(a) not in seen and not seen.add(id(a))]
         if fresh:
-            fresh_groups.append(fresh)
+            context = contexts[index] if contexts and index < len(contexts) else None
+            fresh_groups.append((fresh, context))
 
     bodies: Dict[int, str] = {}      # id(article) -> article text (kept out of the published article)
     if fetch_pages:
-        everyone = [a for group in fresh_groups for a in group]
+        everyone = [a for group, _ in fresh_groups for a in group]
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
             for article, text in zip(everyone, pool.map(lambda a: fetch_article_text(a.get('url') or ''), everyone)):
                 if text:
@@ -382,22 +472,29 @@ def add_summaries(groups: List[List[Dict]], fetch_pages: bool = True) -> None:
         logger.info(f"Article text read for {len(bodies)}/{len(everyone)} articles "
                     f"(Google News links: {sum(1 for a in google if id(a) in bodies)}/{len(google)})")
 
-    chunks = [group[start:start + BATCH_SIZE] for group in fresh_groups for start in range(0, len(group), BATCH_SIZE)]
+    chunks = [(group[start:start + BATCH_SIZE], context)
+              for group, context in fresh_groups for start in range(0, len(group), BATCH_SIZE)]
 
-    def summarize(chunk):
+    def summarize(job):
+        chunk, context = job
         chunk_bodies = {i: bodies[id(a)] for i, a in enumerate(chunk) if id(a) in bodies}
-        return chunk_bodies, ai_summaries(chunk, chunk_bodies)
+        return chunk_bodies, ai_summaries(chunk, chunk_bodies, context)
 
     with ThreadPoolExecutor(max_workers=AI_WORKERS) as pool:
         results = list(pool.map(summarize, chunks))
 
-    for chunk, (chunk_bodies, summaries) in zip(chunks, results):
+    for (chunk, _), (chunk_bodies, items) in zip(chunks, results):
         for i, article in enumerate(chunk):
-            if summaries:
-                article['summary'], article['summary_source'] = summaries[i], 'ai'
+            if items:
+                item = items[i]
+                article['summary'], article['summary_source'] = item['summary'], 'ai'
                 # 근거를 화면에 표시한다: 기사 본문 / 제목·발췌 / 제목만
                 article['summary_basis'] = ('body' if i in chunk_bodies
                                             else 'excerpt' if article.get('snippet') else 'title')
+                if item.get('opinion'):
+                    article['opinion'] = item['opinion']
+                if item.get('tone'):
+                    article['ai_tag'] = item['tone']
             elif article.get('snippet'):
                 article['summary'], article['summary_source'] = clip(article['snippet']), 'snippet'
             else:
@@ -442,3 +539,33 @@ def add_key_points(materials: Dict[str, Dict]) -> Dict[str, Dict]:
         elif material.get('fallback'):
             results[ticker] = {'points': material['fallback'][:MAX_KEY_POINTS], 'source': 'data'}
     return results
+
+
+def section_opinions(subject: str, material: str, sections: Dict[str, str]) -> Optional[Dict[str, str]]:
+    """{section key: AI 의견} for one subject; None without a usable AI answer"""
+    prompt = build_section_opinion_prompt(subject, material, sections)
+    for attempt in (1, 2):
+        text = ai_text(prompt)
+        opinions = parse_ai_object(text, sections)
+        if opinions or text is None:
+            return opinions
+        logger.warning(f"AI section opinions unusable for {subject} (attempt {attempt}/2): {(text or '')[:200]!r}")
+    return None
+
+
+def add_section_opinions(materials: Dict[str, Dict]) -> Dict[str, Dict[str, str]]:
+    """
+    key -> {section: AI 의견}
+
+    Args:
+        materials: key (a ticker, or e.g. '__market__') -> {'subject', 'text', 'sections': {section: label}}
+                   (processors.opinion_material); entries without text are skipped
+    """
+    jobs = [(key, m) for key, m in materials.items() if m.get('text') and m.get('sections')]
+
+    def run(job):
+        key, m = job
+        return key, section_opinions(m.get('subject') or key, m['text'], m['sections'])
+
+    with ThreadPoolExecutor(max_workers=AI_WORKERS) as pool:
+        return {key: opinions for key, opinions in pool.map(run, jobs) if opinions}

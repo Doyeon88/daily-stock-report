@@ -298,3 +298,39 @@ def test_ipo_and_ownership_filings_are_tracked():
     }}}
     result = sec_filings.parse_recent_filings(submissions, 1, '2026-11-01')
     assert [f['form'] for f in result['filings']] == ['S-1', 'SCHEDULE 13G', 'SCHEDULE 13D/A']
+
+
+def test_items_are_read_from_the_8k_text_in_order_without_repeats():
+    text = 'FORM 8-K ... Item 2.02 Results of Operations ... ITEM 7.01 Regulation FD ... Item 2.02 ... Item 9.01'
+    assert sec_filings.items_from_text(text) == '2.02,7.01,9.01'
+    assert sec_filings.describe_items(sec_filings.items_from_text(text)) == '실적 발표, Reg FD 공시'
+
+
+def test_document_text_drops_tags_scripts_and_entities():
+    page = '<div><span>PRESS&nbsp;RELEASE</span><script>x()</script><div>Bloom &amp; Co</div></div>'
+    assert sec_filings.document_text(page) == 'PRESS RELEASE Bloom & Co'
+
+
+def test_yahoo_8k_keeps_document_and_press_release_links():
+    filings = [{'date': '2026-11-20', 'type': '8-K', 'edgarUrl': 'https://finance.yahoo.com/sec-filing/BE/x',
+                'exhibits': {'8-K': 'https://cdn.example/8k.htm', 'EX-99.1': 'https://cdn.example/pr.htm',
+                             'EX-99.2': 'https://cdn.example/sup.htm'}},
+               {'date': '2026-11-19', 'type': '6-K', 'edgarUrl': 'https://finance.yahoo.com/sec-filing/NBIS/y',
+                'exhibits': {'EX-99.2': 'https://cdn.example/other.htm'}},
+               {'date': '2026-11-18', 'type': '424B5', 'edgarUrl': 'https://finance.yahoo.com/sec-filing/BE/z',
+                'exhibits': {'EX-99.1': 'https://cdn.example/no.htm'}}]
+    rows = sec_filings.parse_yahoo_filings(filings, since='2026-11-01')['filings']
+    assert rows[0]['doc_url'] == 'https://cdn.example/8k.htm' and rows[0]['press_url'] == 'https://cdn.example/pr.htm'
+    assert rows[1]['press_url'] == 'https://cdn.example/other.htm' and 'doc_url' not in rows[1]   # any EX-99.x
+    assert rows[2]['form'] == '424B5' and 'press_url' not in rows[2]    # only 8-K/6-K carry a press release
+
+
+def test_event_details_label_the_8k_and_keep_the_press_text(monkeypatch):
+    pages = {'https://cdn.example/8k.htm': 'Item 1.01 Entry into a Material Definitive Agreement Item 9.01',
+             'https://cdn.example/pr.htm': 'Bloom signs a 1 GW supply deal with a hyperscaler.'}
+    monkeypatch.setattr(sec_filings, 'fetch_document_text', lambda url, limit=None: pages.get(url, ''))
+    result = {'filings': [{'form': '8-K', 'date': '2026-11-20', 'label': '', 'url': 'u',
+                           'doc_url': 'https://cdn.example/8k.htm', 'press_url': 'https://cdn.example/pr.htm'}]}
+    sec_filings.add_event_details(result)
+    row = result['filings'][0]
+    assert row['label'] == '주요 계약 체결' and row['_press_text'].startswith('Bloom signs')

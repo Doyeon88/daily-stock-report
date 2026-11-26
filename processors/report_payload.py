@@ -56,4 +56,12 @@ def build_full_payload(report: Dict) -> Dict:
         'valuation': report.get('valuation') or {},
         'portfolio': report.get('portfolio_public'),   # 공개 저장소용: 금액 없는 버전
         'checklist': report.get('checklist') or {},
+        'earnings_history': report.get('earnings_history') or {},
+        'insiders': report.get('insiders') or {},
+        'dilution': report.get('dilution') or {},
+        'options': report.get('options') or {},
+        'signals': report.get('signals') or {},
+        'risk': report.get('risk') or {},
+        'opinions': report.get('opinions') or {},
+        'data_quality': report.get('data_quality') or {},
     }

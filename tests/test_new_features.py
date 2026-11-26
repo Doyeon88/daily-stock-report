@@ -11,7 +11,7 @@ from datetime import date
 import pytest
 
 import config
-from processors import calendar_events, portfolio, tagging, valuation
+from processors import calendar_events, data_quality, opinion_material, portfolio, report_generator, tagging, valuation
 from scrapers import analyst_changes, institutional
 
 
@@ -40,6 +40,18 @@ def test_news_is_never_verified_and_filings_always_are():
     tagged = tagging.tag_filings([{'form': '8-K', 'label': '미등록 주식 발행'}, {'form': '10-Q', 'label': ''}])
     assert [t['tag'] for t in tagged] == [tagging.BEARISH, tagging.NEUTRAL]
     assert all(t['verified'] for t in tagged)
+
+
+def test_ai_verdict_wins_over_keywords():
+    tagged = tagging.tag_news([{'title': 'Shares plunge after downgrade', 'ai_tag': '호재'},
+                               {'title': 'Shares plunge after downgrade', 'ai_tag': 'maybe'}])
+    assert (tagged[0]['tag'], tagged[0]['tag_source']) == (tagging.BULLISH, 'ai')
+    assert tagged[1]['tag'] == tagging.BEARISH and 'tag_source' not in tagged[1]
+
+
+def test_offering_forms_and_two_item_labels_are_tagged():
+    tagged = tagging.tag_filings([{'form': '424B5', 'label': ''}, {'form': '8-K', 'label': '실적 발표, 주요 계약 체결'}])
+    assert [t['tag'] for t in tagged] == [tagging.BEARISH, tagging.BULLISH]
 
 
 def test_overall_tag_tie_is_neutral():
@@ -255,3 +267,43 @@ def test_kst_to_cron_rejects_bad_time(bad):
 
 def test_workflow_cron_matches_watchlist():
     assert _load_script().main(['--check']) == 0
+
+
+# ---------- data gaps, extra signals, opinion material ----------
+
+def test_data_quality_lists_missing_sections_but_accepts_empty_filings_and_insiders():
+    result = data_quality.build_data_quality(['BE'], {
+        'details': {'BE': {'rsi14': 50}}, 'news': {'BE': []}, 'filings': {'BE': {'filings': []}},
+        'insiders': {'BE': {'buy_count': 0}}, 'options': {},
+    })
+    assert '기사' in result['BE']['missing'] and '옵션' in result['BE']['missing']
+    assert '공시' not in result['BE']['missing'] and '내부자 거래' not in result['BE']['missing']
+    assert result['BE']['collected'] == 3 and result['BE']['total'] == len(data_quality.SECTIONS)
+
+
+def test_extra_flags_come_from_the_new_sections():
+    report = {
+        'details': {'BE': {'days_to_earnings': 3}, 'SYM': {'days_to_earnings': 30}},
+        'signals': {'BE': {'labels': [{'text': '데드크로스(50일선이 200일선 아래로, 최근 10일)', 'tone': 'down'},
+                                      {'text': 'MACD 골든크로스(최근 3일)', 'tone': 'up'}]}},
+        'dilution': {'BE': {'level': '높음'}, 'SYM': {'level': '주의'}},
+        'insiders': {'BE': {'cluster_buy': True}},
+        'options': {'BE': {'for_earnings': True, 'expected_move_pct': 12.5},
+                    'SYM': {'for_earnings': True, 'expected_move_pct': 9.0}},
+    }
+    assert report_generator.build_extra_flags(report, ['BE', 'SYM']) == [
+        'BE 데드크로스', 'BE 희석 위험 높음', 'BE 임원 클러스터 매수', 'BE 실적 기대변동 ±12.5%']
+
+
+def test_opinion_material_only_lists_sections_with_data():
+    material = opinion_material.build_ticker_material(
+        'BE', 'Bloom Energy',
+        insiders={'window_days': 90, 'buy_count': 2, 'sell_count': 0, 'buy_value': 1.2e6, 'sell_value': 0,
+                  'net_value': 1.2e6, 'cluster_buy': True, 'other_count': 0,
+                  'recent': [{'date': '2026-11-20', 'insider': 'A', 'position': 'CEO', 'kind': 'buy',
+                              'shares': 1000, 'value': 600000}]},
+        institutional={'holders': [], 'buyers': []})
+    assert material['subject'] == 'BE(Bloom Energy)'
+    assert list(material['sections']) == ['insiders']
+    assert '클러스터 매수 있음' in material['text'] and '$1.2M' in material['text']
+    assert opinion_material.build_market_material({})['text'] == ''
