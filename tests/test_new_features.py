@@ -181,7 +181,7 @@ def test_split_movers_separates_buyers_and_sellers():
         {'holder': 'Seller', 'shares': 90, 'pct_change': -0.2},       # -20%
         {'holder': 'Flat', 'shares': 80, 'pct_change': 0.0},          # unchanged
         {'holder': 'Unknown', 'shares': 70, 'pct_change': None},      # change not reported
-        {'holder': 'Buyer Small', 'shares': 60, 'pct_change': 0.1},   # +10%
+        {'holder': 'Buyer   Small   ', 'shares': 60, 'pct_change': 0.1},   # +10%, Yahoo-style padded name
     ])
     buyers, sellers, summary = institutional.split_movers(rows)
     assert [b['holder'] for b in buyers] == ['Buyer Big', 'Buyer Small']   # biggest increase first

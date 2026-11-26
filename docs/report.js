@@ -578,8 +578,10 @@ function renderReport(doc, data) {
     if (holders.length) {
       const s = inst.summary || {};
       card.appendChild(element('h3', '', '13F 기관 매매 동향 (직전 신고 대비 · 지연·롱온리·패시브 포함, 원문 확인 필요)'));
+      const counted = (s.increased || 0) + (s.decreased || 0) + (s.unchanged || 0);
       if ((s.increased || 0) + (s.decreased || 0) > 0) {
         const line = element('div', 'meta');
+        line.appendChild(element('span', '', 'Yahoo 상위 ' + counted + '개 기관 중  '));
         line.appendChild(element('span', 'up', '▲ 매수 ' + (s.increased || 0) + '곳'));
         line.appendChild(element('span', '', '  ·  '));
         line.appendChild(element('span', 'down', '▼ 매도 ' + (s.decreased || 0) + '곳'));

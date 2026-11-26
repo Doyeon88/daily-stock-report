@@ -48,7 +48,8 @@ def _parse_rows(records: List[Dict]) -> List[Dict]:
             continue
         held, change = f(r.get('pct_held')), f(r.get('pct_change'))
         rows.append({
-            'holder': str(r['holder']), 'shares': int(shares),
+            'holder': ' '.join(str(r['holder']).split()),   # Yahoo pads some names with spaces
+            'shares': int(shares),
             'pct_held': round(held * 100, 2) if held is not None else None,
             'pct_change': round(change * 100, 1) if change is not None else None,
             'reported': str(r.get('date_reported') or '')[:10],
