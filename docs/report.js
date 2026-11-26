@@ -216,6 +216,14 @@ function formatHolder(h) {
     + (h.reported ? ' · ' + h.reported : '');
 }
 
+// 매수/매도 동향용: 변화율을 앞세워 누가 얼마나 늘렸는지/줄였는지 바로 보이게 한다
+function formatHolderMove(h) {
+  return h.holder + ' ' + signed(h.pct_change)
+    + (has(h.pct_held) ? ' · 보유 ' + Number(h.pct_held).toFixed(2) + '%' : '')
+    + ' · ' + Number(h.shares).toLocaleString('en-US') + '주'
+    + (h.reported ? ' · ' + h.reported : '');
+}
+
 function formatCalendarItem(item) {
   const dday = item.dday === 0 ? 'D-DAY' : 'D-' + item.dday;
   return {
@@ -471,7 +479,8 @@ function renderReport(doc, data) {
     const valuationLines = formatValuation((data.valuation || {})[ticker]);
     const analystEntry = (data.analyst || {})[ticker];
     const analystLines = formatAnalyst(analystEntry);
-    const holders = ((data.institutional || {})[ticker] || {}).holders || [];
+    const inst = (data.institutional || {})[ticker] || {};
+    const holders = inst.holders || [];
     const check = (data.checklist || {})[ticker];
     const filingInfo = filings[ticker] || { filings: [], form4_count: 0 };
     const articles = news[ticker] || [];
@@ -510,6 +519,16 @@ function renderReport(doc, data) {
       card.appendChild(element('h3', '', title));
       const ul = element('ul', 'items');
       for (const text of entries) ul.appendChild(element('li', '', text));
+      card.appendChild(ul);
+    };
+
+    // 색으로 구분되는 매매 동향 목록 (매수=상승 톤/빨강, 매도=하락 톤/파랑)
+    const addMoveList = (title, movers, tone) => {
+      if (!movers.length) return;
+      card.appendChild(element('h3', '', title));
+      const ul = element('ul', 'items');
+      const arrow = tone === 'up' ? '▲ ' : tone === 'down' ? '▼ ' : '';
+      for (const h of movers) ul.appendChild(element('li', tone, arrow + formatHolderMove(h)));
       card.appendChild(ul);
     };
 
@@ -555,7 +574,21 @@ function renderReport(doc, data) {
     addList('컨센서스 (Yahoo 집계 · 매출/EPS/PER)', formatConsensus((data.consensus || {})[ticker]));
     addList('EPS 컨센서스 변화 (Yahoo 집계)', ((analystEntry && analystEntry.eps_trend) || []).length
       ? analystLines.filter((t) => t.startsWith('EPS 컨센')) : []);
-    addList('13F 기관 보유 (지연·롱온리·패시브 포함, 원문 확인 필요)', holders.map(formatHolder));
+    // 13F 기관 매매 동향: 누가 늘렸고(매수) 누가 줄였는지(매도)를 색으로 구분해 먼저 보여 준다
+    if (holders.length) {
+      const s = inst.summary || {};
+      card.appendChild(element('h3', '', '13F 기관 매매 동향 (직전 신고 대비 · 지연·롱온리·패시브 포함, 원문 확인 필요)'));
+      if ((s.increased || 0) + (s.decreased || 0) > 0) {
+        const line = element('div', 'meta');
+        line.appendChild(element('span', 'up', '▲ 매수 ' + (s.increased || 0) + '곳'));
+        line.appendChild(element('span', '', '  ·  '));
+        line.appendChild(element('span', 'down', '▼ 매도 ' + (s.decreased || 0) + '곳'));
+        card.appendChild(line);
+      }
+      addMoveList('늘린 곳 (매수 상위)', inst.buyers || [], 'up');
+      addMoveList('줄인 곳 (매도 상위)', inst.sellers || [], 'down');
+      addList('보유량 순', holders.map(formatHolder));
+    }
     if (check) {
       addList('다음 이벤트 체크리스트', [
         ...(check.next_event ? ['다음: ' + formatCalendarItem(check.next_event).text] : []),
@@ -579,7 +612,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     decodeReportFragment, loadReport, formatRow, formatTimestamp, formatDetailLines,
     formatFiling, formatNews, formatNewsTime, formatHeadline, renderReport, DATA_URL_PREFIX,
-    formatValuation, formatAnalyst, formatConsensus, formatHolder, formatCalendarItem, formatPortfolio, formatReportItems, keyPointsLabel,
+    formatValuation, formatAnalyst, formatConsensus, formatHolder, formatHolderMove, formatCalendarItem, formatPortfolio, formatReportItems, keyPointsLabel,
     summaryLabel, classTag: tagTone,
   };
 }

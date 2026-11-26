@@ -20,15 +20,18 @@ from scrapers.retry import call_with_retry
 logger = logging.getLogger(__name__)
 
 TOP_HOLDERS = 6
+TOP_MOVERS = 5   # 매수(늘림)·매도(줄임) 상위 몇 곳을 보여 줄지
 
 
-def parse_holders(records: List[Dict]) -> List[Dict]:
+def _parse_rows(records: List[Dict]) -> List[Dict]:
     """
+    All valid holder rows, biggest holders first (by shares)
+
     Args:
         records: rows like {'holder', 'shares', 'pct_held', 'pct_change', 'date_reported'}
 
     Returns:
-        biggest holders first, capped: [{'holder', 'shares', 'pct_held', 'pct_change', 'reported'}]
+        [{'holder', 'shares', 'pct_held', 'pct_change', 'reported'}], biggest holders first.
         pct_held/pct_change are in percent; pct_change is the change in shares vs the previous filing
     """
     def f(v):
@@ -51,12 +54,43 @@ def parse_holders(records: List[Dict]) -> List[Dict]:
             'reported': str(r.get('date_reported') or '')[:10],
         })
     rows.sort(key=lambda r: r['shares'], reverse=True)
-    return rows[:TOP_HOLDERS]
+    return rows
+
+
+def parse_holders(records: List[Dict]) -> List[Dict]:
+    """Biggest holders first, capped to TOP_HOLDERS (see _parse_rows for the row shape)"""
+    return _parse_rows(records)[:TOP_HOLDERS]
+
+
+def split_movers(rows: List[Dict], limit: int = TOP_MOVERS):
+    """
+    Who added to and who trimmed their position vs the previous 13F filing
+
+    Args:
+        rows: parsed holder rows (from parse_holders / _parse_rows); pct_change is in percent
+        limit: how many to keep in each of buyers/sellers
+
+    Returns:
+        (buyers, sellers, summary): buyers are the biggest share increases first, sellers the
+        biggest decreases first (both capped to limit); summary counts increased/decreased/unchanged.
+        Holders whose change is unknown (pct_change is None) are left out of every bucket.
+    """
+    movers = [r for r in rows if r.get('pct_change') is not None]
+    buyers = sorted((r for r in movers if r['pct_change'] > 0), key=lambda r: r['pct_change'], reverse=True)
+    sellers = sorted((r for r in movers if r['pct_change'] < 0), key=lambda r: r['pct_change'])
+    summary = {
+        'increased': sum(1 for r in movers if r['pct_change'] > 0),
+        'decreased': sum(1 for r in movers if r['pct_change'] < 0),
+        'unchanged': sum(1 for r in movers if r['pct_change'] == 0),
+    }
+    return buyers[:limit], sellers[:limit], summary
 
 
 def fetch_institutional(tickers: List[str], today: Optional[date] = None) -> Dict[str, Dict]:
     """
-    ticker -> {'holders': [...], 'season': True}; empty dict outside the 13F season
+    ticker -> {'holders', 'buyers', 'sellers', 'summary', 'season': True}; empty dict outside the
+    13F season. 'holders' are the biggest holders; 'buyers'/'sellers' are who added/trimmed the most
+    vs the previous filing; 'summary' counts how many increased/decreased/were unchanged.
 
     Args:
         tickers: Stock ticker symbols
@@ -76,9 +110,14 @@ def fetch_institutional(tickers: List[str], today: Optional[date] = None) -> Dic
                 'Holder': 'holder', 'Shares': 'shares', 'pctHeld': 'pct_held',
                 'pctChange': 'pct_change', 'Date Reported': 'date_reported',
             }).to_dict('records')
-            holders = parse_holders(records)
+            rows = _parse_rows(records)
+            holders = rows[:TOP_HOLDERS]
             if holders:
-                results[ticker] = {'holders': holders, 'season': True}
+                buyers, sellers, summary = split_movers(rows)
+                results[ticker] = {
+                    'holders': holders, 'buyers': buyers, 'sellers': sellers,
+                    'summary': summary, 'season': True,
+                }
         except Exception as e:
             logger.error(f"{ticker}: 13F holders unavailable: {e}")
     return results

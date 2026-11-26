@@ -175,6 +175,28 @@ def test_parse_holders_sorted_and_scaled():
     assert holders[1]['pct_change'] is None
 
 
+def test_split_movers_separates_buyers_and_sellers():
+    rows = institutional.parse_holders([
+        {'holder': 'Buyer Big', 'shares': 100, 'pct_change': 0.5},    # +50%
+        {'holder': 'Seller', 'shares': 90, 'pct_change': -0.2},       # -20%
+        {'holder': 'Flat', 'shares': 80, 'pct_change': 0.0},          # unchanged
+        {'holder': 'Unknown', 'shares': 70, 'pct_change': None},      # change not reported
+        {'holder': 'Buyer Small', 'shares': 60, 'pct_change': 0.1},   # +10%
+    ])
+    buyers, sellers, summary = institutional.split_movers(rows)
+    assert [b['holder'] for b in buyers] == ['Buyer Big', 'Buyer Small']   # biggest increase first
+    assert [s['holder'] for s in sellers] == ['Seller']
+    assert summary == {'increased': 2, 'decreased': 1, 'unchanged': 1}     # 'Unknown' is excluded
+
+
+def test_split_movers_caps_each_bucket():
+    rows = institutional._parse_rows([
+        {'holder': f'B{i}', 'shares': 1000 - i, 'pct_change': (i + 1) / 100} for i in range(8)
+    ])
+    buyers, sellers, summary = institutional.split_movers(rows, limit=3)
+    assert len(buyers) == 3 and sellers == [] and summary['increased'] == 8
+
+
 def test_institutional_skipped_outside_season():
     assert institutional.fetch_institutional(['BE'], today=date(2026, 12, 25)) == {}
 
