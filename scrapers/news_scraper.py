@@ -121,15 +121,27 @@ def google_news_query(query: str, now: datetime, lookback_days: int = NEWS_LOOKB
     return articles
 
 
+def _title_key(title: str) -> str:
+    """Normalized headline for de-duplication: only letters and digits, lower-cased"""
+    return re.sub(r'[^a-z0-9]+', '', (title or '').lower())
+
+
+def _url_key(url: str) -> str:
+    """Normalized link for de-duplication: scheme, leading 'www.', trailing slash and #fragment ignored"""
+    cleaned = re.sub(r'#.*$', '', (url or '').strip())
+    cleaned = re.sub(r'^https?://', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'^www\.', '', cleaned, flags=re.IGNORECASE)
+    return cleaned.rstrip('/').lower()
+
+
 def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBACK_DAYS,
            limit: Optional[int] = None) -> List[Dict]:
-    """Keep recent articles, drop duplicate titles (keeping the first seen), newest first, capped"""
+    """Keep recent articles, drop duplicates by title or link (keeping the first seen), newest first, capped"""
     cutoff = now - timedelta(days=lookback_days)
     positions, merged = {}, []
     for article in sorted(
         (a for a in articles if a['published'] >= cutoff), key=lambda a: a['published'], reverse=True
     ):
-        key = re.sub(r'[^a-z0-9]+', '', article['title'].lower())
         entry = {
             'title': article['title'][:MAX_TITLE_LENGTH],
             'source': article['source'],
@@ -137,12 +149,18 @@ def _merge(articles: List[Dict], now: datetime, lookback_days: int = NEWS_LOOKBA
             'published': article['published'].astimezone(timezone.utc).isoformat(timespec='minutes'),
             'snippet': (article.get('snippet') or '')[:MAX_SNIPPET_LENGTH],
         }
-        if key in positions:
-            # Same headline from two sources: keep the position but prefer the copy that has an excerpt
-            if not merged[positions[key]]['snippet'] and entry['snippet']:
-                merged[positions[key]] = entry
+        # Same story: same normalized headline OR same link (from different sources/search feeds)
+        title_key, url_key = _title_key(article['title']), _url_key(article['url'])
+        pos = positions.get(title_key)
+        if pos is None:
+            pos = positions.get(url_key)
+        if pos is not None:
+            # Keep the slot but prefer the copy that has an excerpt (summary material)
+            if not merged[pos]['snippet'] and entry['snippet']:
+                merged[pos] = entry
+            positions[title_key] = positions[url_key] = pos
             continue
-        positions[key] = len(merged)
+        positions[title_key] = positions[url_key] = len(merged)
         merged.append(entry)
     # 요약 재료가 있는 기사(Finnhub·Yahoo의 발췌문)를 먼저 고르고, 모자라면 발췌문 없는 기사(Google News)로 채운다.
     # 고른 뒤에는 다시 최신순으로 보여 준다.

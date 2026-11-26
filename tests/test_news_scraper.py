@@ -143,3 +143,22 @@ def test_duplicate_headline_keeps_the_copy_with_an_excerpt():
         dict(base, url='https://yahoo.example/x', snippet='Excerpt text'),
     ], NOW)
     assert len(merged) == 1 and merged[0]['url'] == 'https://yahoo.example/x' and merged[0]['snippet'] == 'Excerpt text'
+
+
+def test_same_link_with_different_titles_is_deduplicated():
+    base = {'source': 's', 'published': NOW}
+    merged = news_scraper._merge([
+        dict(base, title='Bloom wins a huge new deal', url='https://site.example/story', snippet=''),
+        dict(base, title='Bloom Energy lands a contract', url='https://site.example/story', snippet='Excerpt'),
+    ], NOW)
+    # Different headlines, same link -> one article, keeping the copy that carries an excerpt
+    assert len(merged) == 1 and merged[0]['snippet'] == 'Excerpt'
+
+
+def test_link_dedup_ignores_scheme_www_and_trailing_slash():
+    base = {'source': 's', 'published': NOW, 'snippet': ''}
+    merged = news_scraper._merge([
+        dict(base, title='A', url='https://www.site.example/story/'),
+        dict(base, title='B', url='http://site.example/story'),
+    ], NOW)
+    assert len(merged) == 1
